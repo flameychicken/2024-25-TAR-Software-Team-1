@@ -5,14 +5,14 @@ Create Take Off function
 '''
 
 '''
-TESTING
 Create Landing Function
 '''
 
-'''
-Create Loitering Function
-'''
+#loitering function
+async def loiter_in_rotation(drone, position):
+    
 
+# main running function
 async def run():
 
     #Init drone
