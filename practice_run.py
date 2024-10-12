@@ -1,6 +1,6 @@
 #!/user/bin/env python3
 '''
-Create Take Off fucntion
+Create Take Off function
 '''
 
 '''
