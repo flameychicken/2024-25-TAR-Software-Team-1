@@ -30,5 +30,5 @@ async def run():
     print("-- Landing")
     await drone.aciton.land()
 
-if __name__ = "__main__":
+if __name__ == "__main__":
     asyncio.run(run())
