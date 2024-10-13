@@ -1,13 +1,14 @@
 import asyncio
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed
+from mavsdk.action import YawBehavior
 
 async def orbit(drone, orbit_height, yaw_behavior):
     print('Starting orbit at {}m height from the ground'.format(orbit_height))
     await drone.action.do_orbit(
         radius_m=10,  # Orbit radius in meters
         velocity_ms=2,  # Orbiting speed in meters per second
-        yaw_behavior=yaw_behavior,  # Yaw behavior (e.g., 'yaw_behavior.YAW_LOCKED')
+        yaw_behavior=yaw_behavior,  # Yaw behavior
         latitude_deg=47.398036222362471,  # Replace with your target latitude
         longitude_deg=8.5450146439425509,  # Replace with your target longitude
         absolute_altitude_m=orbit_height  # Altitude for the orbit
@@ -32,13 +33,13 @@ async def main():
     await drone.action.takeoff()
 
     # Wait for the drone to reach a stable altitude
-    await asyncio.sleep(5)
+    await asyncio.sleep(5)  # Stabilization time
 
     print("-- Setting offboard mode")
     await drone.offboard.start()
 
-    # Start the orbiting function
-    await orbit(drone, orbit_height=10, yaw_behavior="yaw_behavior.YAW_LOCKED")
+    # Start the orbiting function immediately after stabilization
+    await orbit(drone, orbit_height=10, yaw_behavior=YawBehavior.YAW_LOCKED)
 
     print("-- Landing")
     await drone.action.land()
