@@ -1,64 +1,95 @@
-#!/user/bin/env python3
 import asyncio
 from mavsdk import System
-from mavsdk.action import OrbitYawBehavior
+from mavsdk.offboard import VelocityBodyYawspeed
+import pygame
 
-async def run():
+def init():
+    print("Initializing pygame...")
+    pygame.init()
+    pygame.display.set_mode((400, 400))
+    print("Pygame initialized.")
+
+def getKey(keyName):
+    ans = False
+    for eve in pygame.event.get(): pass
+    keyInput = pygame.key.get_pressed()
+    myKey = getattr(pygame, 'K_{}'.format(keyName))
+    if keyInput[myKey]:
+        ans = True
+    pygame.display.update()
+    return ans
+
+def get_keyboard_input():
+    forward, right, down, yaw_speed = 0, 0, 0, 0
+    speed = 2.5  # meters/second
+    yaw_speed_rate = 50  # degrees/second
+
+    if getKey("a"):
+        right = -speed
+    elif getKey("d"):
+        right = speed
+    if getKey("UP"):
+        down = -speed  # Going up decreases the down speed in body frame
+    elif getKey("DOWN"):
+        down = speed
+    if getKey("w"):
+        forward = speed
+    elif getKey("s"):
+        forward = -speed
+    if getKey("q"):
+        yaw_speed = yaw_speed_rate
+    elif getKey("e"):
+        yaw_speed = -yaw_speed_rate
+
+    return [forward, right, down, yaw_speed]
+
+async def main():
+    print("Connecting to drone...")
     drone = System()
-    await drone.connect(system_address="udp://:14540")
+    await drone.connect(system_address="udp://:14445")
 
     print("Waiting for drone to connect...")
     async for state in drone.core.connection_state():
         if state.is_connected:
-            print("Drone discovered!")
+            print("-- Connected to drone!")
             break
 
-    print("Waiting for drone to have a global position estimate...")
-    async for health in drone.telemetry.health():
-        if health.is_global_position_ok and health.is_home_position_ok:
-            print("-- Global position estimate OK")
-            break
-
-    position = await drone.telemetry.position().__aiter__().__anext__()
-    orbit_height = position.absolute_altitude_m+10
-    yaw_behavior = OrbitYawBehavior.HOLD_FRONT_TO_CIRCLE_CENTER
+    # print("Waiting for global position estimate...")
+    # async for health in drone.telemetry.health():
+    #     if health.is_global_position_ok and health.is_home_position_ok:
+    #         print("-- Global position estimate OK")
+    #         break
 
     print("-- Arming")
     await drone.action.arm()
 
-    take_off()
-    orbit(drone, orbit_height, yaw_behavior)
-    landing()
-
-'''
-Create Take Off function
-'''
-async def take_off():
-    print("--- Taking Off")
+    print("-- Taking off")
     await drone.action.takeoff()
-    await asyncio.sleep(10)
-'''
-Create Landing Function
-'''
-async def landing():
-    await drone.action.return_to_launch()
-    print("--- Landing")
 
-'''
-Create Loitering Function
-'''
-async def orbit(drone, orbit_height, yaw_behavior):
-    print('Do orbit at 10m height from the ground')
-    await drone.action.do_orbit(
-        radius_m=10,
-        velocity_ms=2,
-        yaw_behavior=yaw_behavior,
-        latitude_deg=47.398036222362471,
-        longitude_deg=8.5450146439425509,
-        absolute_altitude_m=orbit_height
-    )
-    await asyncio.sleep(60)
+    # Wait for the drone to reach a stable altitude
+    await asyncio.sleep(5)
 
+    # Initial setpoint before starting offboard mode
+    initial_velocity = VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+    await drone.offboard.set_velocity_body(initial_velocity)
+
+    print("-- Setting offboard mode")
+    await drone.offboard.start()
+
+    while True:
+        vals = get_keyboard_input()
+        velocity = VelocityBodyYawspeed(vals[0], vals[1], vals[2], vals[3])
+        await drone.offboard.set_velocity_body(velocity)
+
+        # Breaking the loop and landing if 'l' key is pressed
+        if getKey("l"):
+            print("-- Landing")
+            await drone.action.land()
+            break
+
+        await asyncio.sleep(0.1)
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    init()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
