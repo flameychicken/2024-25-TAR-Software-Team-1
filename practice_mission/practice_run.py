@@ -2,23 +2,6 @@ import asyncio
 from mavsdk import System
 from mavsdk.offboard import VelocityBodyYawspeed
 
-async def orbit(drone, orbit_radius, orbit_speed):
-    print('Starting orbit...')
-    # Set the initial angle and velocity
-    angle = 0
-    while angle < 360:
-        # Convert angle to radians for circular motion
-        radians = angle * (3.14159 / 180.0)
-        forward = orbit_speed * -1  # Adjust forward motion to go circular
-        right = orbit_radius * -1 * (radians % (2 * 3.14159))  # Circular right motion
-        
-        # Set velocity to create circular motion
-        velocity = VelocityBodyYawspeed(forward, right, 0, 0)
-        await drone.offboard.set_velocity_body(velocity)
-
-        angle += 5  # Increment angle (degrees)
-        await asyncio.sleep(0.1)  # Update frequency
-
 async def main():
     print("Connecting to drone...")
     drone = System()
@@ -37,13 +20,38 @@ async def main():
     await drone.action.takeoff()
 
     # Wait for the drone to reach a stable altitude
-    await asyncio.sleep(5)  # Stabilization time
+    await asyncio.sleep(5)
 
     print("-- Setting offboard mode")
     await drone.offboard.start()
 
-    # Start the orbiting function immediately after stabilization
-    await orbit(drone, orbit_radius=10, orbit_speed=2)
+    # Circulate for 60 seconds
+    start_time = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_time < 60:
+        # Set a velocity for hovering in place (0 forward, 0 right, 0 down)
+        velocity = VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+        await drone.offboard.set_velocity_body(velocity)
+
+        await asyncio.sleep(0.1)  # Update frequency
 
     print("-- Landing")
-    await drone.actio
+    await drone.action.land()
+
+'''
+Loitering Function
+'''
+async def orbit(drone, orbit_height, yaw_behavior):
+    print('Do orbit at 10m height from the ground')
+    await drone.action.do_orbit(
+        radius_m=10,
+        velocity_ms=2,
+        yaw_behavior=yaw_behavior,
+        latitude_deg=47.398036222362471,
+        longitude_deg=8.5450146439425509,
+        absolute_altitude_m=orbit_height
+    )
+    await asyncio.sleep(60)
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
