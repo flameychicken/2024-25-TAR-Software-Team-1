@@ -46,9 +46,9 @@ async def orbit(drone, orbit_height, yaw_behavior):
         radius_m=10,
         velocity_ms=2,
         yaw_behavior=yaw_behavior,
-        latitude_deg=47.398036222362471,
-        longitude_deg=8.5450146439425509,
-        absolute_altitude_m=orbit_height
+        latitude_deg=float("nan"),
+        longitude_deg=float("nan"),
+        absolute_altitude_m=float("nan")
     )
     await asyncio.sleep(60)
 
