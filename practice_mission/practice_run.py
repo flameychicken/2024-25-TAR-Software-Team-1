@@ -59,6 +59,10 @@ async def main():
         print("-- Setting offboard mode")
         await drone.offboard.start()
 
+        # Define a velocity setpoint (x, y, z, yaw) in meters per second
+        velocity_body_yawspeed = VelocityBodyYawspeed(0, 0, 0, 0)  # Hover in place
+        await drone.offboard.set_velocity_body(velocity_body_yawspeed)
+
         # Start loitering (orbiting) for up to 30 seconds or until person is detected
         await loiter_and_detect(drone)
 
@@ -67,6 +71,7 @@ async def main():
 
     except Exception as e:
         print(f"Error: {e}")
+
 
 async def loiter_and_detect(drone):
     """
