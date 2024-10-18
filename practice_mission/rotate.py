@@ -7,7 +7,7 @@ class DroneController:
     def __init__(self):
         self.drone = System()
 
-    async def demo1(self, port: str = 'udp://:14540'):
+    async def rotate(self, port: str = 'udp://:14540'):
         await self.drone.connect(system_address=port)
 
         print("Waiting for connection...")
@@ -24,9 +24,9 @@ class DroneController:
 
         await asyncio.sleep(1)  # Allow time for the drone to stabilize
 
-        # Check if drone is ready to arm
+        # Check if battery is good and if all systems are okay
         async for health in self.drone.telemetry.health():
-            if health.is_ready_to_arm:
+            if health.is_battery_ok and health.is_global_position_ok and health.is_home_position_ok:
                 print("-- Drone is ready to arm")
                 break
             else:
@@ -93,4 +93,4 @@ class DroneController:
 if __name__ == "__main__":
     controller = DroneController()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(controller.demo1())
+    loop.run_until_complete(controller.rotate())

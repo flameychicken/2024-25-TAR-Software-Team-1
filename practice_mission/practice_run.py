@@ -6,7 +6,7 @@ class DroneController:
     def __init__(self):
         self.drone = System()
 
-    async def demo1(self, port: str = 'udp://:14540'):
+    async def practice_run(self, port: str = 'udp://:14540'):
         await self.drone.connect(system_address=port)
 
         print("Waiting for connection...")
@@ -67,4 +67,4 @@ class DroneController:
 if __name__ == "__main__":
     controller = DroneController()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(controller.demo1())
+    loop.run_until_complete(controller.practice_run())
