@@ -1,88 +1,63 @@
 import asyncio
 from mavsdk import System
-from mavsdk.offboard import VelocityBodyYawspeed
+from mavsdk.offboard import PositionNedYaw, OffboardError
 
-async def main():
-    print("Connecting to drone...")
-    drone = System()
-    await drone.connect(system_address="udp://:14540")
+class DroneController:
+    def __init__(self):
+        self.drone = System()
 
-    print("Waiting for drone to connect...")
-    async for state in drone.core.connection_state():
-        if state.is_connected:
-            print("-- Connected to drone!")
-            break
+    async def demo1(self, port: str = 'serial:///dev/ttyTHS1:57600'):
+        await self.drone.connect(system_address=port)
 
-    # Delay to allow the drone to initialize properly
-    await asyncio.sleep(2)  # Wait for 2 seconds
+        print("Waiting for connection...")
+        async for state in self.drone.core.connection_state():
+            if state.is_connected:
+                print(f"-- connection successful")
+                break
 
-    try:
-        # Check GPS info
-        async for gps in drone.telemetry.gps_info():
-            print(f"GPS: {gps}")
+        print("Waiting for drone to have a global position estimate...")
+        async for health in self.drone.telemetry.health():
+            if health.is_global_position_ok and health.is_home_position_ok:
+                print("-- Global position estimate OK")
+                break
 
-            if gps.num_satellites < 5:  # Ensure a good number of satellites
-                print("Insufficient GPS satellites.")
-                return
+        await asyncio.sleep(1)  # Allow time for the drone to stabilize
 
-            break  # Break after getting the first GPS info
-
-        # Check battery info
-        async for battery in drone.telemetry.battery():
-            print(f"Battery: {battery.remaining_percent * 100:.2f}%")
-
-            if battery.remaining_percent < 0.2:  # Check if battery is below 20%
-                print("Battery too low to arm.")
-                return
-            
-            break  # Break after getting the first battery info
-
-        print("-- Checking pre-flight conditions...")
         print("-- Arming")
-        await drone.action.arm()
+        await self.drone.action.arm()
 
-        print("-- Taking off")
-        await drone.action.takeoff()
+        await asyncio.sleep(0.5)
 
-        # Wait for the drone to reach a stable altitude
-        await asyncio.sleep(5)
+        print("-- Setting initial setpoint")
+        current_position = await self.drone.telemetry.position()  # Get current position
+        await self.drone.offboard.set_position_ned(PositionNedYaw(
+            current_position.north_m + 1.0,  # Offset slightly from current position
+            current_position.east_m,
+            current_position.down_m,
+            0.0
+        ))
 
-        print("-- Setting offboard mode")
-        await drone.offboard.start()
+        print("-- Initial setpoint set successfully")
 
-        # Fly in a circle
-        await fly_in_circle(drone)
+        print("-- Starting offboard")
+        try:
+            await self.drone.offboard.start()
+            print("-- Offboard mode started successfully")
+        except OffboardError as error:
+            print(f"Starting offboard mode failed with error code: {error._result.result}")
+            print("-- Disarming")
+            await self.drone.action.disarm()
+            return
+
+        # Add your additional flight logic here (e.g., moving, hovering, etc.)
+        
+        # Example of hovering for a while before landing
+        await asyncio.sleep(10)  # Hover for 10 seconds
 
         print("-- Landing")
-        await drone.action.land()
-
-    except Exception as e:
-        print(f"Error: {e}")
-
-async def fly_in_circle(drone):
-    """
-    Fly in a circular path by sending velocity setpoints.
-    """
-    print("Starting to fly in a circle...")
-
-    # Define parameters for the circular flight
-    radius = 10  # meters
-    speed = 2  # meters per second
-    duration = 30  # seconds to fly around
-
-    # Calculate the number of iterations based on duration and speed
-    iterations = duration // 2  # 2 seconds per iteration
-
-    for _ in range(iterations):
-        # Calculate the next setpoint based on circle parameters
-        yaw = _ * (360 / iterations)  # Change yaw angle for circular motion
-        velocity_body_yawspeed = VelocityBodyYawspeed(speed, 0, 0, yaw)
-
-        await drone.offboard.set_velocity_body(velocity_body_yawspeed)
-        await asyncio.sleep(2)  # Send setpoint every 2 seconds
-
-    print("Finished flying in a circle.")
+        await self.drone.action.land()
 
 if __name__ == "__main__":
+    controller = DroneController()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(controller.demo1())
