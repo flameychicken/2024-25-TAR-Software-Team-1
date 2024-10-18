@@ -22,10 +22,21 @@ async def main():
             print("-- Connected to drone!")
             break
 
-    # Ensure pre-flight conditions are met
-    print("-- Checking pre-flight conditions...")
-    # You might want to add checks for battery level and GPS lock here
+    # Check GPS status
+    async for gps in drone.telemetry.gps_info():
+        print(f"GPS: {gps}")
+        if gps.num_satellites < 5:  # Ensure a good number of satellites
+            print("Insufficient GPS satellites.")
+            return
 
+    # Check battery status
+    async for battery in drone.telemetry.battery():
+        print(f"Battery: {battery.remaining_percent * 100:.2f}%")
+        if battery.remaining_percent < 0.2:  # Check if battery is below 20%
+            print("Battery too low to arm.")
+            return
+
+    print("-- Checking pre-flight conditions...")
     print("-- Arming")
     try:
         await drone.action.arm()
@@ -42,6 +53,11 @@ async def main():
     print("-- Setting offboard mode")
     await drone.offboard.start()
 
+    # Start loitering (orbiting) for up to 30 seconds or until person is detected
+    await loiter_and_detect(drone)
+
+    print("-- Landing")
+    await drone.action.land()
 
 async def loiter_and_detect(drone):
     """
@@ -50,7 +66,6 @@ async def loiter_and_detect(drone):
     """
     print("Starting loitering...")
 
-    # Start the orbit in the background
     orbit_task = asyncio.create_task(orbit(drone, orbit_height=10, yaw_behavior="HOLD_YAW"))
 
     start_time = asyncio.get_event_loop().time()
@@ -88,6 +103,9 @@ async def perform_rapid_altitude_change(drone):
     print("-- Returning to loiter mode")
     await orbit(drone, orbit_height=10, yaw_behavior="HOLD_YAW")
 
+'''
+Loitering Function
+'''
 async def orbit(drone, orbit_height, yaw_behavior):
     print('Orbiting at 10m height from the ground')
     await drone.action.do_orbit(
