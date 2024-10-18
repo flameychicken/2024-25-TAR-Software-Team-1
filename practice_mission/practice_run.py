@@ -36,11 +36,12 @@ class DroneController:
             current_position = position
             break
 
+        # Set the initial setpoint using latitude, longitude, and altitude
         await self.drone.offboard.set_position_ned(PositionNedYaw(
-            current_position.north_m + 1.0,  # Offset slightly from current position
-            current_position.east_m,
-            current_position.down_m,
-            0.0
+            0.0,  # North in NED frame (forward), you can adjust this
+            0.0,  # East in NED frame (right), you can adjust this
+            -1.0,  # Down in NED frame (negative for altitude)
+            0.0    # Yaw angle
         ))
 
         print("-- Initial setpoint set successfully")
