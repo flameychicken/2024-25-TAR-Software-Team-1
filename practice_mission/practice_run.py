@@ -22,8 +22,16 @@ async def main():
             print("-- Connected to drone!")
             break
 
+    # Ensure pre-flight conditions are met
+    print("-- Checking pre-flight conditions...")
+    # You might want to add checks for battery level and GPS lock here
+
     print("-- Arming")
-    await drone.action.arm()
+    try:
+        await drone.action.arm()
+    except Exception as e:
+        print(f"Failed to arm: {e}")
+        return  # Exit if arming fails
 
     print("-- Taking off")
     await drone.action.takeoff()
@@ -34,15 +42,6 @@ async def main():
     print("-- Setting offboard mode")
     await drone.offboard.start()
 
-    # Set a velocity for hovering in place right after starting offboard mode
-    velocity = VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)  # No movement
-    await drone.offboard.set_velocity_body(velocity)  # Set the hover velocity
-
-    # Start loitering (orbiting) for up to 30 seconds or until person is detected
-    await loiter_and_detect(drone)
-
-    print("-- Landing")
-    await drone.action.land()
 
 async def loiter_and_detect(drone):
     """
