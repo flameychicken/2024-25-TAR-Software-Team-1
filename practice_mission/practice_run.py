@@ -22,44 +22,48 @@ async def main():
             print("-- Connected to drone!")
             break
 
-    # Check GPS status only once after connecting
-    gps = await drone.telemetry.gps_info()
-    print(f"GPS: {gps}")
+    # Delay to allow the drone to initialize properly
+    await asyncio.sleep(2)  # Wait for 2 seconds
 
-    if gps.num_satellites < 5:  # Ensure a good number of satellites
-        print("Insufficient GPS satellites.")
-        return
-
-    # Check battery status only once after connecting
-    battery = await drone.telemetry.battery()
-    print(f"Battery: {battery.remaining_percent * 100:.2f}%")
-
-    if battery.remaining_percent < 0.2:  # Check if battery is below 20%
-        print("Battery too low to arm.")
-        return
-
-    print("-- Checking pre-flight conditions...")
-    print("-- Arming")
     try:
+        # Check GPS status
+        gps = await drone.telemetry.gps_info()
+        print(f"GPS: {gps}")
+
+        if gps.num_satellites < 5:  # Ensure a good number of satellites
+            print("Insufficient GPS satellites.")
+            return
+
+        # Check battery status
+        battery = await drone.telemetry.battery()
+        print(f"Battery: {battery.remaining_percent * 100:.2f}%")
+
+        if battery.remaining_percent < 0.2:  # Check if battery is below 20%
+            print("Battery too low to arm.")
+            return
+
+        print("-- Checking pre-flight conditions...")
+        print("-- Arming")
         await drone.action.arm()
+
+        print("-- Taking off")
+        await drone.action.takeoff()
+
+        # Wait for the drone to reach a stable altitude
+        await asyncio.sleep(5)
+
+        print("-- Setting offboard mode")
+        await drone.offboard.start()
+
+        # Start loitering (orbiting) for up to 30 seconds or until person is detected
+        await loiter_and_detect(drone)
+
+        print("-- Landing")
+        await drone.action.land()
+
     except Exception as e:
-        print(f"Failed to arm: {e}")
-        return  # Exit if arming fails
+        print(f"Error: {e}")
 
-    print("-- Taking off")
-    await drone.action.takeoff()
-
-    # Wait for the drone to reach a stable altitude
-    await asyncio.sleep(5)
-
-    print("-- Setting offboard mode")
-    await drone.offboard.start()
-
-    # Start loitering (orbiting) for up to 30 seconds or until person is detected
-    await loiter_and_detect(drone)
-
-    print("-- Landing")
-    await drone.action.land()
 
 async def loiter_and_detect(drone):
     """
