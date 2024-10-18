@@ -34,7 +34,7 @@ class DroneController:
         await asyncio.sleep(5)  # Wait for the drone to gain some altitude
 
         print("-- Setting initial setpoint to move forward")
-        current_position = await self.drone.telemetry.position()  # Get current position
+        current_position = await self.get_current_position()  # Get current position
 
         # Move forward for 10 seconds
         print("-- Flying forward for 10 seconds")
@@ -42,6 +42,10 @@ class DroneController:
 
         print("-- Landing")
         await self.drone.action.land()
+
+    async def get_current_position(self):
+        async for position in self.drone.telemetry.position():
+            return position  # Return the latest position from the async generator
 
     async def fly_forward(self, current_position, duration: float):
         start_time = asyncio.get_event_loop().time()
