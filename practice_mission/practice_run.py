@@ -6,13 +6,13 @@ class DroneController:
     def __init__(self):
         self.drone = System()
 
-    async def demo1(self, port: str = 'serial:///dev/ttyTHS1:57600'):
+    async def demo1(self, port: str = 'udp://:14540'):
         await self.drone.connect(system_address=port)
 
         print("Waiting for connection...")
         async for state in self.drone.core.connection_state():
             if state.is_connected:
-                print(f"-- connection successful")
+                print("-- connection successful")
                 break
 
         print("Waiting for drone to have a global position estimate...")
