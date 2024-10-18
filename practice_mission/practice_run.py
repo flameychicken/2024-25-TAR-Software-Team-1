@@ -6,7 +6,7 @@ class DroneController:
     def __init__(self):
         self.drone = System()
 
-    async def practice_run(self, port: str = 'udp://:14540'):
+    async def demo1(self, port: str = 'udp://:14540'):
         await self.drone.connect(system_address=port)
 
         print("Waiting for connection...")
@@ -28,43 +28,45 @@ class DroneController:
 
         await asyncio.sleep(0.5)
 
-        print("-- Setting initial setpoint")
-        
-        # Awaiting the first value from the position async generator
-        async for position in self.drone.telemetry.position():
-            # Getting the current position
-            current_position = position
-            break
+        print("-- Taking off")
+        await self.drone.action.takeoff()
 
-        # Set the initial setpoint using latitude, longitude, and altitude
-        await self.drone.offboard.set_position_ned(PositionNedYaw(
-            0.0,  # North in NED frame (forward), you can adjust this
-            0.0,  # East in NED frame (right), you can adjust this
-            -1.0,  # Down in NED frame (negative for altitude)
-            0.0    # Yaw angle
-        ))
+        await asyncio.sleep(5)  # Wait for the drone to gain some altitude
 
-        print("-- Initial setpoint set successfully")
+        print("-- Setting initial setpoint to move forward")
+        current_position = await self.get_current_position()  # Get current position
 
-        print("-- Starting offboard")
-        try:
-            await self.drone.offboard.start()
-            print("-- Offboard mode started successfully")
-        except OffboardError as error:
-            print(f"Starting offboard mode failed with error code: {error._result.result}")
-            print("-- Disarming")
-            await self.drone.action.disarm()
-            return
-
-        # Add your additional flight logic here (e.g., moving, hovering, etc.)
-        
-        # Example of hovering for a while before landing
-        await asyncio.sleep(10)  # Hover for 10 seconds
+        # Move forward for 10 seconds
+        print("-- Flying forward for 10 seconds")
+        await self.fly_forward(current_position, duration=10)
 
         print("-- Landing")
         await self.drone.action.land()
 
+    async def get_current_position(self):
+        async for position in self.drone.telemetry.position():
+            return position  # Return the latest position from the async generator
+
+    async def fly_forward(self, current_position, duration: float):
+        start_time = asyncio.get_event_loop().time()
+        forward_distance = 5.0  # Forward distance in meters
+        end_time = start_time + duration
+
+        while asyncio.get_event_loop().time() < end_time:
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            north_offset = (forward_distance / duration) * elapsed_time
+
+            # Set new position using the current position and north offset
+            await self.drone.offboard.set_position_ned(PositionNedYaw(
+                current_position.north_m + north_offset,  # Move north
+                current_position.east_m,                   # Keep the same east position
+                current_position.down_m,                   # Maintain altitude
+                0.0                                       # Yaw angle
+            ))
+
+            await asyncio.sleep(0.1)  # Sleep to allow time for processing
+
 if __name__ == "__main__":
     controller = DroneController()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(controller.practice_run())
+    loop.run_until_complete(controller.demo1())
