@@ -29,7 +29,13 @@ class DroneController:
         await asyncio.sleep(0.5)
 
         print("-- Setting initial setpoint")
-        current_position = await self.drone.telemetry.position()  # Get current position
+        
+        # Awaiting the first value from the position async generator
+        async for position in self.drone.telemetry.position():
+            # Getting the current position
+            current_position = position
+            break
+
         await self.drone.offboard.set_position_ned(PositionNedYaw(
             current_position.north_m + 1.0,  # Offset slightly from current position
             current_position.east_m,
