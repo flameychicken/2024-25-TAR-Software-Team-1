@@ -22,19 +22,21 @@ async def main():
             print("-- Connected to drone!")
             break
 
-    # Check GPS status
-    async for gps in drone.telemetry.gps_info():
-        print(f"GPS: {gps}")
-        if gps.num_satellites < 5:  # Ensure a good number of satellites
-            print("Insufficient GPS satellites.")
-            return
+    # Check GPS status only once after connecting
+    gps = await drone.telemetry.gps_info()
+    print(f"GPS: {gps}")
 
-    # Check battery status
-    async for battery in drone.telemetry.battery():
-        print(f"Battery: {battery.remaining_percent * 100:.2f}%")
-        if battery.remaining_percent < 0.2:  # Check if battery is below 20%
-            print("Battery too low to arm.")
-            return
+    if gps.num_satellites < 5:  # Ensure a good number of satellites
+        print("Insufficient GPS satellites.")
+        return
+
+    # Check battery status only once after connecting
+    battery = await drone.telemetry.battery()
+    print(f"Battery: {battery.remaining_percent * 100:.2f}%")
+
+    if battery.remaining_percent < 0.2:  # Check if battery is below 20%
+        print("Battery too low to arm.")
+        return
 
     print("-- Checking pre-flight conditions...")
     print("-- Arming")
