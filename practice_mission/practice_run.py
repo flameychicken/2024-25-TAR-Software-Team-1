@@ -26,21 +26,25 @@ async def main():
     await asyncio.sleep(2)  # Wait for 2 seconds
 
     try:
-        # Check GPS status
-        gps = await drone.telemetry.gps_info()
-        print(f"GPS: {gps}")
+        # Use async generator for GPS info
+        async for gps in drone.telemetry.gps_info():
+            print(f"GPS: {gps}")
 
-        if gps.num_satellites < 5:  # Ensure a good number of satellites
-            print("Insufficient GPS satellites.")
-            return
+            if gps.num_satellites < 5:  # Ensure a good number of satellites
+                print("Insufficient GPS satellites.")
+                return
 
-        # Check battery status
-        battery = await drone.telemetry.battery()
-        print(f"Battery: {battery.remaining_percent * 100:.2f}%")
+            break  # Break after getting the first GPS info
 
-        if battery.remaining_percent < 0.2:  # Check if battery is below 20%
-            print("Battery too low to arm.")
-            return
+        # Use async generator for battery info
+        async for battery in drone.telemetry.battery():
+            print(f"Battery: {battery.remaining_percent * 100:.2f}%")
+
+            if battery.remaining_percent < 0.2:  # Check if battery is below 20%
+                print("Battery too low to arm.")
+                return
+            
+            break  # Break after getting the first battery info
 
         print("-- Checking pre-flight conditions...")
         print("-- Arming")
@@ -63,7 +67,6 @@ async def main():
 
     except Exception as e:
         print(f"Error: {e}")
-
 
 async def loiter_and_detect(drone):
     """
