@@ -34,9 +34,7 @@ class DroneController:
         await asyncio.sleep(5)  # Wait for the drone to gain some altitude
 
         print("-- Setting initial setpoint to move forward")
-        async for position in self.drone.telemetry.position():
-            current_position = position
-            break
+        current_position = await self.drone.telemetry.position()  # Get current position
 
         # Move forward for 10 seconds
         print("-- Flying forward for 10 seconds")
@@ -52,12 +50,14 @@ class DroneController:
 
         while asyncio.get_event_loop().time() < end_time:
             elapsed_time = asyncio.get_event_loop().time() - start_time
-            north_offset = (forward_distance / duration) * (elapsed_time)
+            north_offset = (forward_distance / duration) * elapsed_time
+
+            # Set new position using the current position and north offset
             await self.drone.offboard.set_position_ned(PositionNedYaw(
-                current_position.north_m + north_offset,
-                current_position.east_m,
-                -1.0,  # Maintain altitude
-                0.0    # Yaw angle
+                current_position.north_m + north_offset,  # Move north
+                current_position.east_m,                   # Keep the same east position
+                current_position.down_m,                   # Maintain altitude
+                0.0                                       # Yaw angle
             ))
 
             await asyncio.sleep(0.1)  # Sleep to allow time for processing
