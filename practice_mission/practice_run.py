@@ -34,8 +34,8 @@ async def main():
     print("-- Setting offboard mode")
     await drone.offboard.start()
 
-    # Set a velocity for hovering in place
-    velocity = VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
+    # Set a velocity for hovering in place right after starting offboard mode
+    velocity = VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)  # No movement
     await drone.offboard.set_velocity_body(velocity)  # Set the hover velocity
 
     # Start loitering (orbiting) for up to 30 seconds or until person is detected
@@ -50,7 +50,7 @@ async def loiter_and_detect(drone):
     perform a rapid up-down movement. If no detection, land after 30 seconds.
     """
     print("Starting loitering...")
-    
+
     # Start the orbit in the background
     orbit_task = asyncio.create_task(orbit(drone, orbit_height=10, yaw_behavior="HOLD_YAW"))
 
@@ -101,7 +101,7 @@ async def orbit(drone, orbit_height, yaw_behavior):
     )
     # Simulating loitering for 30 seconds or until interrupted by detection
     await asyncio.sleep(30)
-# Main
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
