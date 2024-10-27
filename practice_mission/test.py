@@ -54,27 +54,28 @@ async def main():
     await drone.action.takeoff()
 
     # Wait for the drone to reach a stable altitude
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
 
-
+    
     print('Do orbit at 10m height from the ground')
     await drone.action.do_orbit(
-        radius_m=10,
-        velocity_ms=2,
+        radius_m=2.0,
+        velocity_ms=2.0,
         yaw_behavior=OrbitYawBehavior.HOLD_FRONT_TO_CIRCLE_CENTER,
         latitude_deg=float("nan"),
         longitude_deg=float("nan"),
         absolute_altitude_m=float("nan")
     )
-
-    """while True:
+    """
+    while True:
         video = cv2.VideoCapture(1)
         if human_detection(video):
             print('human detected')
-            break  """  
+            break  
+    """  
     await asyncio.sleep(60)
 
 if __name__ == "__main__":
-    init()
+    #init()
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
