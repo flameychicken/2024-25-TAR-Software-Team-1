@@ -46,6 +46,8 @@ async def main():
         longitude_deg=float("nan"),
         absolute_altitude_m=float("nan")
     )
+    video = cv2.VideoCapture(1)
+    
     await asyncio.sleep(60)
 
 if __name__ == "__main__":
