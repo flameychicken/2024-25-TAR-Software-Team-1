@@ -2,10 +2,11 @@ import asyncio
 from mavsdk import System
 from mavsdk.offboard import PositionNedYaw, OffboardError
 
+
 class DroneController:
     def __init__(self):
         self.drone = System()
-
+          
     async def practice_run(self, port: str = 'udp://:14540'):
         await self.drone.connect(system_address=port)
 
@@ -29,21 +30,9 @@ class DroneController:
         await asyncio.sleep(0.5)
 
         print("-- Setting initial setpoint")
-        
-        # Awaiting the first value from the position async generator
-        async for position in self.drone.telemetry.position():
-            # Getting the current position
-            current_position = position
-            break
 
-        # Set the initial setpoint using latitude, longitude, and altitude
-        await self.drone.offboard.set_position_ned(PositionNedYaw(
-            0.0,  # North in NED frame (forward), you can adjust this
-            0.0,  # East in NED frame (right), you can adjust this
-            -1.0,  # Down in NED frame (negative for altitude)
-            0.0    # Yaw angle
-        ))
-
+        # Setting initial position at 1 meter altitude
+        await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -1.0, 0.0))
         print("-- Initial setpoint set successfully")
 
         print("-- Starting offboard")
@@ -56,13 +45,24 @@ class DroneController:
             await self.drone.action.disarm()
             return
 
-        # Add your additional flight logic here (e.g., moving, hovering, etc.)
-        
-        # Example of hovering for a while before landing
-        await asyncio.sleep(10)  # Hover for 10 seconds
+        # Define the square path by setting the NED frame positions
+        square_path = [
+            PositionNedYaw(5.0, 0.0, -1.0, 0.0),    # Move 5 meters North
+            PositionNedYaw(5.0, 5.0, -1.0, 90.0),   # Move 5 meters East
+            PositionNedYaw(0.0, 5.0, -1.0, 180.0),  # Move 5 meters South
+            PositionNedYaw(0.0, 0.0, -1.0, 270.0)   # Move 5 meters West back to start
+        ]
 
+        # Fly to each waypoint in the square
+        for i, position in enumerate(square_path):
+            print(f"-- Flying to waypoint {i + 1}")
+            await self.drone.offboard.set_position_ned(position)
+            await asyncio.sleep(5)  # Wait to reach each waypoint
+
+        # After completing the square, land the drone
         print("-- Landing")
         await self.drone.action.land()
+
 
 if __name__ == "__main__":
     controller = DroneController()
