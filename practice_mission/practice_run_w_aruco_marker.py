@@ -4,16 +4,68 @@ from mavsdk.offboard import PositionNedYaw, OffboardError
 import cv2
 import cv2.aruco as aruco
 import numpy as np
-import time
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst, GLib
 
 # Define Aruco ID and marker size for detection
 id_to_find = 72
 marker_size = 10  # in cm
 
+# Video class for capturing video stream
+class Video:
+    def __init__(self, port=5600):
+        Gst.init(None)
+        self.port = port
+        self._frame = None
+        self.running = True
+        self.loop = asyncio.get_event_loop()
+        self.loop.run_in_executor(None, self.run)
+
+    def start_gst(self, config=None):
+        if not config:
+            config = [
+                f'udpsrc port={self.port} ! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264',
+                '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
+                '! appsink emit-signals=true sync=false max-buffers=2 drop=true name=appsink0'
+            ]
+        command = ' '.join(config)
+        self.video_pipe = Gst.parse_launch(command)
+        self.video_pipe.set_state(Gst.State.PLAYING)
+        self.video_sink = self.video_pipe.get_by_name('appsink0')
+        self.video_sink.connect('new-sample', self.callback)
+
+    @staticmethod
+    def gst_to_opencv(sample):
+        buf = sample.get_buffer()
+        caps = sample.get_caps()
+        array = np.ndarray(
+            (
+                caps.get_structure(0).get_value('height'),
+                caps.get_structure(0).get_value('width'),
+                3
+            ),
+            buffer=buf.extract_dup(0, buf.get_size()), dtype=np.uint8)
+        return array
+
+    def frame(self):
+        return self._frame
+
+    def frame_available(self):
+        return self._frame is not None
+
+    def run(self):
+        self.start_gst()
+
+    def callback(self, sink):
+        sample = sink.emit('pull-sample')
+        self._frame = self.gst_to_opencv(sample)
+        return Gst.FlowReturn.OK
+
 class DroneController:
     def __init__(self):
         self.drone = System()
-        self.video = Video(port=5600)  # Initialize video stream
+        self.video = Video()  # Initialize video stream
 
     async def practice_run(self, port='udp://:14540'):
         await self.drone.connect(system_address=port)
@@ -21,7 +73,7 @@ class DroneController:
         print("Waiting for connection...")
         async for state in self.drone.core.connection_state():
             if state.is_connected:
-                print("-- connection successful")
+                print("-- Connection successful")
                 break
 
         print("Waiting for global position...")
@@ -36,10 +88,6 @@ class DroneController:
         await self.drone.action.arm()
         await asyncio.sleep(0.5)
 
-        # Set an initial position to avoid NO_SETPOINT_SET error
-        initial_position = PositionNedYaw(0.0, 0.0, -1.0, 0.0)  # Hover 1m above the ground
-        await self.drone.offboard.set_position_ned(initial_position)
-
         print("-- Starting offboard")
         try:
             await self.drone.offboard.start()
@@ -50,8 +98,7 @@ class DroneController:
             return
 
         # Start both the flight and detection tasks
-        await asyncio.gather(self.fly_square(2), self.detect_and_land())
-
+        await asyncio.gather(self.fly_square(2), self.detect_flag())
 
     async def fly_square(self, n: int):
         square_path = [
@@ -68,9 +115,10 @@ class DroneController:
                 await self.drone.offboard.set_position_ned(position)
                 await asyncio.sleep(5)
 
-        print("-- Completed square path")
+        print("-- Landing")
+        await self.drone.action.land()
 
-    async def detect_and_land(self):
+    async def detect_flag(self):
         while True:
             if not self.video.frame_available():
                 await asyncio.sleep(0.1)
@@ -80,11 +128,10 @@ class DroneController:
             if frame is None:
                 continue
 
-            # If marker detected, initiate landing
             if self.detect_aruco_marker(frame):
-                print("Landing pad detected, initiating landing!")
+                print("Flag detected!")
                 await self.drone.action.land()
-                break  # Exit detection loop after initiating landing
+                break  # Stop detection after flag found
 
             await asyncio.sleep(0.5)
 
@@ -111,12 +158,10 @@ class DroneController:
             aruco.drawDetectedMarkers(frame, corners)
             cv2.drawFrameAxes(frame, camera_matrix, camera_distortion, rvec, tvec, 10)
 
-            # Print marker's position relative to the drone
             str_position = f"Marker Position x={tvec[0][0]:.2f} y={tvec[0][1]:.2f} z={tvec[0][2]:.2f}"
             print(str_position)
-
-            return True  # Marker detected
-        return False  # Marker not detected
+            return True
+        return False
 
 
 if __name__ == "__main__":
