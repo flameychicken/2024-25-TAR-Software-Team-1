@@ -36,7 +36,10 @@ class DroneController:
         await self.drone.action.arm()
         await asyncio.sleep(0.5)
 
-        # Start both the flight and detection tasks
+        # Set an initial position to avoid NO_SETPOINT_SET error
+        initial_position = PositionNedYaw(0.0, 0.0, -1.0, 0.0)  # Hover 1m above the ground
+        await self.drone.offboard.set_position_ned(initial_position)
+
         print("-- Starting offboard")
         try:
             await self.drone.offboard.start()
@@ -46,7 +49,9 @@ class DroneController:
             await self.drone.action.disarm()
             return
 
+        # Start both the flight and detection tasks
         await asyncio.gather(self.fly_square(2), self.detect_and_land())
+
 
     async def fly_square(self, n: int):
         square_path = [
