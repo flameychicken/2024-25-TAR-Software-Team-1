@@ -45,6 +45,14 @@ class DroneController:
             await self.drone.action.disarm()
             return
 
+        # Fly the square pattern twice
+        await self.fly_square(2)  # `n=2` for now
+
+        # After completing the square, land the drone
+        print("-- Landing")
+        await self.drone.action.land()
+
+    async def fly_square(self, n: int):
         # Define the square path by setting the NED frame positions
         square_path = [
             PositionNedYaw(5.0, 0.0, -1.0, 0.0),    # Move 5 meters North
@@ -53,15 +61,13 @@ class DroneController:
             PositionNedYaw(0.0, 0.0, -1.0, 270.0)   # Move 5 meters West back to start
         ]
 
-        # Fly to each waypoint in the square
-        for i, position in enumerate(square_path):
-            print(f"-- Flying to waypoint {i + 1}")
-            await self.drone.offboard.set_position_ned(position)
-            await asyncio.sleep(5)  # Wait to reach each waypoint
-
-        # After completing the square, land the drone
-        print("-- Landing")
-        await self.drone.action.land()
+        # Repeat the square pattern `n` times
+        for i in range(n):
+            print(f"-- Starting square loop {i + 1}")
+            for j, position in enumerate(square_path):
+                print(f"-- Flying to waypoint {j + 1} of loop {i + 1}")
+                await self.drone.offboard.set_position_ned(position)
+                await asyncio.sleep(5)  # Wait to reach each waypoint
 
 
 if __name__ == "__main__":
