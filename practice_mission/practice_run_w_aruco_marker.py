@@ -1,12 +1,12 @@
 import asyncio
 from mavsdk import System
-from mavsdk.offboard import PositionNedYaw, OffboardError
+from mavsdk.offboard import PositionNedYaw, OffboardError, VelocityBodyYawspeed
+import pygame
 import cv2
 import cv2.aruco as aruco
 import numpy as np
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst, GLib
+import sys, time, math
+from gi.repository import Gst
 
 # Define Aruco ID and marker size for detection
 id_to_find = 72
@@ -18,22 +18,19 @@ class Video:
         Gst.init(None)
         self.port = port
         self._frame = None
-        self.running = True
-        self.loop = asyncio.get_event_loop()
-        self.loop.run_in_executor(None, self.run)
+        self.run()
 
     def start_gst(self, config=None):
         if not config:
             config = [
-                f'udpsrc port={self.port} ! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264',
-                '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
-                '! appsink emit-signals=true sync=false max-buffers=2 drop=true name=appsink0'
+                'videotestsrc ! decodebin',
+                '! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
+                '! appsink'
             ]
         command = ' '.join(config)
         self.video_pipe = Gst.parse_launch(command)
         self.video_pipe.set_state(Gst.State.PLAYING)
         self.video_sink = self.video_pipe.get_by_name('appsink0')
-        self.video_sink.connect('new-sample', self.callback)
 
     @staticmethod
     def gst_to_opencv(sample):
@@ -55,11 +52,17 @@ class Video:
         return self._frame is not None
 
     def run(self):
-        self.start_gst()
+        self.start_gst([
+            f'udpsrc port={self.port} ! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264',
+            '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
+            '! appsink emit-signals=true sync=false max-buffers=2 drop=true'
+        ])
+        self.video_sink.connect('new-sample', self.callback)
 
     def callback(self, sink):
         sample = sink.emit('pull-sample')
-        self._frame = self.gst_to_opencv(sample)
+        new_frame = self.gst_to_opencv(sample)
+        self._frame = new_frame
         return Gst.FlowReturn.OK
 
 class DroneController:
@@ -73,7 +76,7 @@ class DroneController:
         print("Waiting for connection...")
         async for state in self.drone.core.connection_state():
             if state.is_connected:
-                print("-- Connection successful")
+                print("-- connection successful")
                 break
 
         print("Waiting for global position...")
@@ -87,6 +90,16 @@ class DroneController:
         print("-- Arming")
         await self.drone.action.arm()
         await asyncio.sleep(0.5)
+
+        # **Set initial position setpoint**
+        try:
+            initial_setpoint = PositionNedYaw(0.0, 0.0, -1.0, 0.0)
+            await self.drone.offboard.set_position_ned(initial_setpoint)
+            print("-- Initial setpoint set successfully")
+        except Exception as e:
+            print(f"Error setting initial setpoint: {e}")
+            await self.drone.action.disarm()
+            return
 
         print("-- Starting offboard")
         try:
@@ -130,8 +143,6 @@ class DroneController:
 
             if self.detect_aruco_marker(frame):
                 print("Flag detected!")
-                await self.drone.action.land()
-                break  # Stop detection after flag found
 
             await asyncio.sleep(0.5)
 
@@ -154,12 +165,13 @@ class DroneController:
             index = np.where(ids == id_to_find)[0][0]
             rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[index], marker_size, camera_matrix, camera_distortion)
 
-            # Draw detected marker and pose axes
             aruco.drawDetectedMarkers(frame, corners)
             cv2.drawFrameAxes(frame, camera_matrix, camera_distortion, rvec, tvec, 10)
 
+            # Get position in camera frame
             str_position = f"Marker Position x={tvec[0][0]:.2f} y={tvec[0][1]:.2f} z={tvec[0][2]:.2f}"
             print(str_position)
+
             return True
         return False
 
