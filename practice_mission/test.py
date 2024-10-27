@@ -4,13 +4,17 @@ from mavsdk.offboard import VelocityBodyYawspeed
 import pygame
 from mavsdk.action import OrbitYawBehavior
 
+#import cv2
+#import cvlib as cv
+#from cvlib.object_detection import draw_bbox
+
 def init():
     print("Initializing pygame...")
     pygame.init()
     pygame.display.set_mode((400, 400))
     print("Pygame initialized.")
 
-def human_detection(video):
+"""def human_detection(video):
     ret, frame = video.read()
     # Bounding box.
     # the cvlib library has learned some basic objects using object learning
@@ -24,12 +28,12 @@ def human_detection(video):
     if "person" in label:
         return True
     else:
-        return False
+        return False"""
 
 async def main():
     print("Connecting to drone...")
     drone = System()
-    await drone.connect(system_address="udp://:14445")
+    await drone.connect(system_address="udp://:14540")
 
     print("Waiting for drone to connect...")
     async for state in drone.core.connection_state():
@@ -63,12 +67,12 @@ async def main():
         absolute_altitude_m=float("nan")
     )
 
-    while True:
+    """while True:
         video = cv2.VideoCapture(1)
         if human_detection(video):
             print('human detected')
-            break    
-    await asyncio.sleep(0.1)
+            break  """  
+    await asyncio.sleep(60)
 
 if __name__ == "__main__":
     init()
