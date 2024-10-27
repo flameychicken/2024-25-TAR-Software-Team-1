@@ -10,6 +10,22 @@ def init():
     pygame.display.set_mode((400, 400))
     print("Pygame initialized.")
 
+def human_detection(video):
+    ret, frame = video.read()
+    # Bounding box.
+    # the cvlib library has learned some basic objects using object learning
+    # usually it takes around 800 images for it to learn what a phone is.
+    bbox, label, conf = cv.detect_common_objects(frame)
+    
+    output_image = draw_bbox(frame, bbox, label, conf)
+    
+    cv2.imshow("Detection", output_image)
+    
+    if "person" in label:
+        return True
+    else:
+        return False
+
 async def main():
     print("Connecting to drone...")
     drone = System()
@@ -46,9 +62,13 @@ async def main():
         longitude_deg=float("nan"),
         absolute_altitude_m=float("nan")
     )
-    video = cv2.VideoCapture(1)
-    
-    await asyncio.sleep(60)
+
+    while True:
+        video = cv2.VideoCapture(1)
+        if human_detection(video):
+            print('human detected')
+            break    
+    await asyncio.sleep(0.1)
 
 if __name__ == "__main__":
     init()
