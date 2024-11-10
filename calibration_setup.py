@@ -19,7 +19,7 @@ else:
     print("Images available:", os.listdir(image_folder_path))
 
 # Calibration settings
-checkerboard_size = (7, 6)  # Adjust to your checkerboard pattern size
+checkerboard_size = (24, 32)  # Adjust to your checkerboard pattern size
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
 # Prepare object points based on the checkerboard size
