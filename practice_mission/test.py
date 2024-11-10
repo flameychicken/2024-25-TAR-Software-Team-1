@@ -30,6 +30,10 @@ def init():
     else:
         return False"""
 
+async def print_position(drone):
+    async for position in drone.telemetry.position():
+        print(position)
+
 async def main():
     print("Connecting to drone...")
     drone = System()
@@ -55,8 +59,7 @@ async def main():
 
     # Wait for the drone to reach a stable altitude
     await asyncio.sleep(10)
-
-    
+    asyncio.ensure_future(print_position(drone))
     print('Do orbit at 10m height from the ground')
     await drone.action.do_orbit(
         radius_m=2.0,
