@@ -1,6 +1,6 @@
 import asyncio
 from mavsdk import System
-from mavsdk.offboard import PositionNedYaw, AttitudeTarget
+from mavsdk.offboard import PositionNedYaw, Attitude
 import numpy as np
 import cv2
 from gi.repository import Gst
@@ -101,11 +101,10 @@ class DroneController:
             await asyncio.sleep(0.1)
 
     async def set_camera_tilt_down(self):
-        # Adjust pitch to tilt camera downward
         print("-- Tilting camera downward by adjusting pitch")
-        await self.drone.offboard.set_attitude(AttitudeTarget(pitch=90))  # Adjust pitch to look downwards
-        await asyncio.sleep(2)  # Allow time for pitch adjustment
-
+        attitude = Attitude(pitch_deg=90, roll_deg=0, yaw_deg=0, thrust=0.5)
+        await self.drone.offboard.set_attitude(attitude)
+        await asyncio.sleep(2)
         print("-- Tilt adjustment complete, ready to proceed.")
 
     async def search_and_land(self):
