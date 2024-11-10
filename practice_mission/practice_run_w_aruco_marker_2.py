@@ -129,8 +129,10 @@ class DroneController:
         corners, ids, _ = detector.detectMarkers(gray)
 
         if ids is not None and id_to_find in ids:
-            aruco.drawDetectedMarkers(frame, corners)
-            return True
+            print(f"Detected IDs: {ids}")  # Print the detected IDs
+            if id_to_find in ids:
+                aruco.drawDetectedMarkers(frame, corners)
+                return True
         return False
 
     def get_marker_position(self, frame):
