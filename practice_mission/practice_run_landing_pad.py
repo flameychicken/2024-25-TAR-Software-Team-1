@@ -6,8 +6,8 @@ from mavsdk.offboard import OffboardError, VelocityNedYaw
 from mavsdk.camera import Camera
 
 # Marker detection parameters
-ARUCO_DICT = cv2.aruco.DICT_4X4_50  # Choose the dictionary that matches your marker
-ARUCO_PARAMETERS = cv2.aruco.DetectorParameters_create()
+ARUCO_DICT = cv2.aruco.DICT_4X4_50  # or any other dictionary that fits your markers
+ARUCO_PARAMETERS = cv2.aruco.DetectorParameters()
 
 async def run():
     # Connect to the drone

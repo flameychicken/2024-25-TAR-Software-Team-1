@@ -10,6 +10,13 @@ from gi.repository import Gst
 id_to_find = 72
 marker_size = 10  # cm
 
+# Default camera matrix and distortion coefficients for simulation
+camera_matrix = np.array([[800, 0, 640],   # fx, 0, cx
+                          [0, 800, 360],   # 0, fy, cy
+                          [0, 0, 1]], dtype=np.float32)
+
+camera_distortion = np.array([0, 0, 0, 0], dtype=np.float32)
+
 class Video:
     def __init__(self, port=5600):
         Gst.init(None)
@@ -115,10 +122,6 @@ class DroneController:
             await self.drone.action.land()
 
     def detect_aruco_marker(self, frame):
-        calib_path = "./opencv/camera_calibration/"
-        camera_matrix = np.loadtxt(calib_path + 'cameraMatrix_webcam.txt', delimiter=',')
-        camera_distortion = np.loadtxt(calib_path + 'cameraDistortion_webcam.txt', delimiter=',')
-
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
         parameters = aruco.DetectorParameters()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -131,10 +134,6 @@ class DroneController:
         return False
 
     def get_marker_position(self, frame):
-        calib_path = "./opencv/camera_calibration/"
-        camera_matrix = np.loadtxt(calib_path + 'cameraMatrix_webcam.txt', delimiter=',')
-        camera_distortion = np.loadtxt(calib_path + 'cameraDistortion_webcam.txt', delimiter=',')
-
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
         parameters = aruco.DetectorParameters()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
