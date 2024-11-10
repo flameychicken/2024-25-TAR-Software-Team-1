@@ -153,11 +153,14 @@ class DroneController:
 
         # If contours are detected, assume a box is present
         if contours:
-            # Optionally draw the contours on the frame for visualization
-            cv2.drawContours(frame, contours, -1, (0, 255, 0), 3)
+            # Make a copy of the frame to draw on it
+            frame_copy = frame.copy()
+            # Optionally draw the contours on the frame copy for visualization
+            cv2.drawContours(frame_copy, contours, -1, (0, 255, 0), 3)
             return True  # Box detected
 
         return False  # No box detected
+
 
     def detect_aruco_marker(self, frame):
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
