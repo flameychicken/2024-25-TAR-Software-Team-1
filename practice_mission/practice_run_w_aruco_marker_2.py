@@ -1,9 +1,9 @@
 import asyncio
 from mavsdk import System
-from mavsdk.offboard import PositionNedYaw, OffboardError
+from mavsdk.offboard import PositionNedYaw
+import numpy as np
 import cv2
 import cv2.aruco as aruco
-import numpy as np
 from gi.repository import Gst
 
 # Define Aruco ID and marker size
@@ -88,12 +88,22 @@ class DroneController:
         await self.drone.action.arm()
 
         print("-- Starting offboard mode")
-        initial_setpoint = PositionNedYaw(0.0, 0.0, -3.0, 0.0)  # Set initial position
+        initial_setpoint = PositionNedYaw(0.0, 0.0, -3.0, 0.0)  # Set to hover at 3 meters altitude
         await self.drone.offboard.set_position_ned(initial_setpoint)
         await self.drone.offboard.start()
 
-        # Tilt camera downward by adjusting pitch
+        # Confirm stable hovering at target altitude before tilting camera
+        await self.wait_until_hovered(-3.0)
         await self.set_camera_tilt_down()
+
+    async def wait_until_hovered(self, target_altitude, tolerance=0.2):
+        """Wait until the drone stabilizes at the target altitude."""
+        print("-- Waiting for stable hover")
+        async for position in self.drone.telemetry.position():
+            if abs(position.relative_altitude_m - abs(target_altitude)) <= tolerance:
+                print(f"-- Hovered at {target_altitude} meters")
+                break
+            await asyncio.sleep(0.1)
 
     async def set_camera_tilt_down(self):
         # Ascend to a stable hovering altitude
@@ -113,6 +123,7 @@ class DroneController:
 
 
     async def search_and_land(self):
+        """Continuously search for the ArUco marker and land when detected."""
         while True:
             if not self.video.frame_available():
                 await asyncio.sleep(0.1)
@@ -120,8 +131,8 @@ class DroneController:
 
             frame = self.video.frame()
             if frame is not None and self.detect_aruco_marker(frame):
-                await self.move_toward_marker(frame)
-                print("-- Landing sequence complete.")
+                print("-- Landing pad detected, initiating landing.")
+                await self.drone.action.land()
                 break
 
             await asyncio.sleep(0.1)
