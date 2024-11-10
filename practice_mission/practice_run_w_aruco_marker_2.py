@@ -119,7 +119,7 @@ class DroneController:
         print("-- Tilt adjustment complete, ready to proceed.")
 
     async def search_and_land(self):
-        """Continuously search for the ArUco marker and land when detected."""
+        """Continuously search for the box and land when detected."""
         while True:
             if not self.video.frame_available():
                 await asyncio.sleep(0.1)
@@ -127,22 +127,37 @@ class DroneController:
 
             frame = self.video.frame()
             if frame is not None:
-                # Debug print: Detect any object and print "1"
-                if self.detect_any_object(frame):
-                    print("1")
-
-            if self.detect_aruco_marker(frame):
-                print("-- Landing pad detected, initiating landing.")
-                await self.drone.action.land()
-                break
+                # Detect the box and print "1" if detected
+                if self.detect_box(frame):
+                    print("1")  # Debugging print statement for detecting box
+                    print("-- Box detected, initiating landing.")
+                    await self.drone.action.land()
+                    break  # Land the drone when the box is detected
 
             await asyncio.sleep(0.1)
 
-    def detect_any_object(self, frame):
-        """Basic detection of any object based on simple non-zero pixel check."""
-        if np.any(frame):  # Check if there are any non-zero pixels
-            return True
-        return False
+    def detect_box(self, frame):
+        """Detect a box in the frame using color thresholding."""
+        # Convert the frame to HSV (Hue, Saturation, Value) space for easier color-based detection
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        # Define the range of color values for the box (e.g., a green box)
+        lower_bound = np.array([30, 50, 50])  # Lower bound of color in HSV (for green)
+        upper_bound = np.array([90, 255, 255])  # Upper bound of color in HSV (for green)
+
+        # Create a mask using the defined color range
+        mask = cv2.inRange(hsv, lower_bound, upper_bound)
+
+        # Find contours in the mask
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # If contours are detected, assume a box is present
+        if contours:
+            # Optionally draw the contours on the frame for visualization
+            cv2.drawContours(frame, contours, -1, (0, 255, 0), 3)
+            return True  # Box detected
+
+        return False  # No box detected
 
     def detect_aruco_marker(self, frame):
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
