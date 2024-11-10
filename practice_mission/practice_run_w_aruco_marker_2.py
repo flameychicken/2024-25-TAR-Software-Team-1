@@ -1,14 +1,9 @@
 import asyncio
 from mavsdk import System
-from mavsdk.offboard import PositionNedYaw
+from mavsdk.offboard import PositionNedYaw, AttitudeTarget
 import numpy as np
 import cv2
-import cv2.aruco as aruco
 from gi.repository import Gst
-
-# Define Aruco ID and marker size
-id_to_find = 72
-marker_size = 25  # cm
 
 # Default camera matrix and distortion coefficients for simulation
 camera_matrix = np.array([[800, 0, 640],   # fx, 0, cx
@@ -106,78 +101,43 @@ class DroneController:
             await asyncio.sleep(0.1)
 
     async def set_camera_tilt_down(self):
-        # Ascend to a stable hovering altitude
-        print("-- Ascending to a stable altitude for better downward view")
-        await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, 0.0))  # Hover at -5 meters
-        await asyncio.sleep(2)  # Allow time to stabilize
-
-        # After reaching the desired altitude, adjust the yaw to simulate a downward tilt
-        print("-- Tilting camera downward by adjusting yaw")
-        for angle in range(0, -90, -10):  # Adjusting yaw gradually
-            await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, angle))
-            print(f"-- Adjusting yaw to {angle} degrees")
-            await asyncio.sleep(0.5)  # Pause briefly for each yaw adjustment
+        # Adjust pitch to tilt camera downward
+        print("-- Tilting camera downward by adjusting pitch")
+        await self.drone.offboard.set_attitude(AttitudeTarget(pitch=90))  # Adjust pitch to look downwards
+        await asyncio.sleep(2)  # Allow time for pitch adjustment
 
         print("-- Tilt adjustment complete, ready to proceed.")
 
-
-
     async def search_and_land(self):
-        """Continuously search for the ArUco marker and land when detected."""
+        """Continuously search for any detectable object and land when detected."""
         while True:
             if not self.video.frame_available():
                 await asyncio.sleep(0.1)
                 continue
 
             frame = self.video.frame()
-            if frame is not None and self.detect_aruco_marker(frame):
-                print("-- Landing pad detected, initiating landing.")
+            if frame is not None and self.detect_object_in_frame(frame):
+                print("-- Object detected, initiating landing.")
                 await self.drone.action.land()
                 break
 
             await asyncio.sleep(0.1)
 
-    async def move_toward_marker(self, frame):
-        # Calculate distance and movement towards the marker
-        rvec, tvec = self.get_marker_position(frame)
-
-        if tvec is not None:
-            while tvec[0][0][2] > 0.2:  # Continue until close to marker
-                await self.drone.offboard.set_position_ned(
-                    PositionNedYaw(tvec[0][0][0], tvec[0][0][1], -3.0, 0.0)
-                )
-                print(f"-- Approaching marker at x={tvec[0][0][0]}, y={tvec[0][0][1]}, z={tvec[0][0][2]}")
-                await asyncio.sleep(0.5)
-
-            print("-- Marker detected, initiating landing.")
-            await self.drone.action.land()
-
-    def detect_aruco_marker(self, frame):
-        aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
-        parameters = aruco.DetectorParameters()
+    def detect_object_in_frame(self, frame):
+        # Convert frame to grayscale (or other processing as needed)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        detector = aruco.ArucoDetector(aruco_dict, parameters)
-        corners, ids, _ = detector.detectMarkers(gray)
 
-        if ids is not None:
-            print(f"Detected IDs: {ids}")  # Print the detected IDs
-            if id_to_find in ids:
-                aruco.drawDetectedMarkers(frame, corners)
-                return True
+        # Simple example using color range to detect an object
+        lower_bound = np.array([30, 150, 50])  # Adjust based on color of target object
+        upper_bound = np.array([255, 255, 180])
+        mask = cv2.inRange(frame, lower_bound, upper_bound)
+
+        # Detect contours to identify objects
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            print("-- Object detected, contours found.")
+            return True
         return False
-
-    def get_marker_position(self, frame):
-        aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
-        parameters = aruco.DetectorParameters()
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        detector = aruco.ArucoDetector(aruco_dict, parameters)
-        corners, ids, _ = detector.detectMarkers(gray)
-
-        if ids is not None and id_to_find in ids:
-            index = np.where(ids == id_to_find)[0][0]
-            rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[index], marker_size, camera_matrix, camera_distortion)
-            return rvec, tvec
-        return None, None
 
 
 async def main():
