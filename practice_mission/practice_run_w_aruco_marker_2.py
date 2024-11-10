@@ -7,8 +7,8 @@ import numpy as np
 from gi.repository import Gst
 
 # Define Aruco ID and marker size
-id_to_find = 0
-marker_size = 10  # cm
+id_to_find = 72
+marker_size = 25  # cm
 
 # Default camera matrix and distortion coefficients for simulation
 camera_matrix = np.array([[800, 0, 640],   # fx, 0, cx
