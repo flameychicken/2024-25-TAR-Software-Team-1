@@ -96,17 +96,20 @@ class DroneController:
         await self.set_camera_tilt_down()
 
     async def set_camera_tilt_down(self):
-        # Ascend slightly to give a better downward view and yaw for positioning
-        print("-- Tilting camera downward and increasing altitude")
-        await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, 0.0))  # Raise altitude to -5 meters
-        await asyncio.sleep(1)  # Allow time to reach new altitude
+        # Ascend to a stable hovering altitude
+        print("-- Ascending to a stable altitude for better downward view")
+        await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, 0.0))  # Hover at -5 meters
+        await asyncio.sleep(2)  # Allow time to stabilize
 
-        # Rotate to capture a full view below; you may increase yaw if needed for better angles
-        for angle in range(0, -90, -10):  # Adjusting in 10-degree increments for smoother rotation
+        # After reaching the desired altitude, adjust the yaw to simulate a downward tilt
+        print("-- Tilting camera downward by adjusting yaw")
+        for angle in range(0, -90, -10):  # Adjusting yaw gradually
             await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, angle))
             print(f"-- Adjusting yaw to {angle} degrees")
-            await asyncio.sleep(0.5)
-        print("-- Tilt adjustment complete")
+            await asyncio.sleep(0.5)  # Pause briefly for each yaw adjustment
+
+        print("-- Tilt adjustment complete, ready to proceed.")
+
 
 
     async def search_and_land(self):
