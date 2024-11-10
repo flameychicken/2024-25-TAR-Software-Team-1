@@ -1,70 +1,71 @@
-import rospy
+import asyncio
 import cv2
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
 import numpy as np
 from mavsdk import System
+from mavsdk.offboard import OffboardError, PositionNed
+from mavsdk.camera import Camera
 
-# Setup the ROS node and CvBridge
-rospy.init_node('camera_listener')
-bridge = CvBridge()
+# Marker detection parameters
+ARUCO_DICT = cv2.aruco.DICT_4X4_50  # Choose the dictionary that matches your marker
+ARUCO_PARAMETERS = cv2.aruco.DetectorParameters_create()
 
-# Connect to the PX4 drone via MAVSDK
-async def connect_to_drone():
+async def run():
+    # Connect to the drone
     drone = System()
-    await drone.connect(system_address="udp://:14540")  # Connect to PX4 SITL
-    print("Connected to the drone")
-    return drone
+    await drone.connect(system_address="udp://:14540")
 
-async def takeoff(drone):
+    # Wait for the drone to connect
+    print("Waiting for drone to connect...")
+    async for state in drone.core.connection_state():
+        if state.is_connected:
+            print(f"Connected to drone: {state}")
+            break
+
+    # Start the camera stream
+    print("Starting camera stream...")
+    camera = Camera(drone)
+    await camera.start_video_stream()
+
+    # Start offboard mode
+    print("Starting offboard mode...")
+    await drone.offboard.set_rate_position(2.0)  # Set position control rate in meters per second
+
+    # Arm the drone
+    print("Arming the drone...")
     await drone.action.arm()
+
+    # Takeoff to 10 meters altitude
+    print("Taking off...")
     await drone.action.takeoff()
-    print("Drone taking off...")
+    await asyncio.sleep(10)  # Wait for the drone to reach the takeoff altitude
 
-async def detect_landing_pad(frame):
-    """Detect ArUco marker and land on it"""
-    aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
-    aruco_params = cv2.aruco.DetectorParameters_create()
+    # Loop for detecting markers and flying
+    marker_found = False
+    while not marker_found:
+        # Grab the camera frame
+        frame = await camera.capture_video_frame()
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=aruco_params)
+        # Convert the frame to grayscale (needed for ArUco detection)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    if ids is not None:
-        for marker_corners in corners:
-            cv2.aruco.drawDetectedMarkers(frame, corners, ids)
-            print(f"Marker detected: {ids[0]}")
+        # Detect ArUco markers
+        corners, ids, _ = cv2.aruco.detectMarkers(gray, cv2.aruco.Dictionary_get(ARUCO_DICT), parameters=ARUCO_PARAMETERS)
 
-            # Trigger the landing on the detected marker
-            return True  # Trigger landing
-    return False
+        if ids is not None:
+            print(f"Detected marker with ID {ids}")
+            marker_found = True
+            # Compute the position of the marker in the camera's frame
+            # You can calculate distance, angle, and use it to adjust the drone position
+            # For simplicity, assume we just fly to a fixed position
+            await drone.offboard.set_position_ned(PositionNed(0, 0, -10))  # Fly to a fixed point (adjust based on marker location)
+            await asyncio.sleep(5)  # Wait a little at the marker location
 
-def image_callback(msg):
-    """Callback function to handle image feed"""
-    # Convert the ROS Image message to an OpenCV image
-    frame = bridge.imgmsg_to_cv2(msg, "bgr8")
-    print("Received frame")
+    # Land the drone
+    print("Landing...")
+    await drone.action.land()
 
-    # Detect landing pad
-    if detect_landing_pad(frame):
-        # Land the drone
-        rospy.signal_shutdown("Landing pad detected. Landing the drone.")
-        # Call your MAVSDK landing function here
+    print("Mission complete!")
 
-    # Display the camera feed with detected markers
-    cv2.imshow("Camera Feed", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        rospy.signal_shutdown("Exit key pressed")
-
-def main():
-    # Start MAVSDK connection
-    loop = asyncio.get_event_loop()
-    drone = loop.run_until_complete(connect_to_drone())
-    loop.run_until_complete(takeoff(drone))
-
-    # ROS Subscriber for the camera feed
-    rospy.Subscriber('/camera/image_raw', Image, image_callback)
-
-    rospy.spin()  # Keeps the script running to receive ROS messages
-
-if __name__ == "__main__":
-    main()
+# Run the mission
+loop = asyncio.get_event_loop()
+loop.run_until_complete(run())
