@@ -2,22 +2,21 @@ import cv2
 import numpy as np
 import glob
 import os
-from pdf2image import convert_from_path
 
-# Define the path to the folder containing PDF calibration images
-pdf_folder_path = './calibration_images'
+# Define the path to the folder containing calibration images
+image_folder_path = './calibration_images'
 output_image_folder = './temp_images'
 
 # Ensure temp_images folder exists to save extracted images
 if not os.path.exists(output_image_folder):
     os.makedirs(output_image_folder)
 
-# Debugging: Check if the pdf_folder_path exists
-if not os.path.exists(pdf_folder_path):
-    print(f"PDF folder not found: {os.path.abspath(pdf_folder_path)}")
+# Debugging: Check if the image_folder_path exists
+if not os.path.exists(image_folder_path):
+    print(f"Image folder not found: {os.path.abspath(image_folder_path)}")
 else:
-    print(f"PDF folder found: {os.path.abspath(pdf_folder_path)}")
-    print("PDFs available:", os.listdir(pdf_folder_path))
+    print(f"Image folder found: {os.path.abspath(image_folder_path)}")
+    print("Images available:", os.listdir(image_folder_path))
 
 # Calibration settings
 checkerboard_size = (7, 6)  # Adjust to your checkerboard pattern size
@@ -31,28 +30,27 @@ objp[:, :2] = np.mgrid[0:checkerboard_size[0], 0:checkerboard_size[1]].T.reshape
 objpoints = []
 imgpoints = []
 
-# Iterate over each PDF in the folder
-for pdf_file in glob.glob(os.path.join(pdf_folder_path, '*.pdf')):
-    print(f"Processing PDF: {pdf_file}")
-    pages = convert_from_path(pdf_file, dpi=300)
+# Iterate over each image in the folder
+for image_file in glob.glob(os.path.join(image_folder_path, '*.*')):
+    print(f"Processing image: {image_file}")
+    image = cv2.imread(image_file)
+    if image is None:
+        print(f"Failed to load image: {image_file}")
+        continue
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    for i, page in enumerate(pages):
-        img_path = os.path.join(output_image_folder, f'temp_image_{i}.jpg')
-        page.save(img_path, 'JPEG')
-        image = cv2.imread(img_path)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        ret, corners = cv2.findChessboardCorners(gray, checkerboard_size, None)
-        
-        if ret:
-            objpoints.append(objp)
-            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-            imgpoints.append(corners2)
-            cv2.drawChessboardCorners(image, checkerboard_size, corners2, ret)
-            cv2.imshow('Checkerboard Corners', image)
-            cv2.waitKey(500)
-        else:
-            print(f"Checkerboard not found in {img_path}")
+    ret, corners = cv2.findChessboardCorners(gray, checkerboard_size, None)
+    
+    if ret:
+        objpoints.append(objp)
+        corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+        imgpoints.append(corners2)
+        cv2.drawChessboardCorners(image, checkerboard_size, corners2, ret)
+        cv2.imshow('Checkerboard Corners', image)
+        cv2.waitKey(500)
+    else:
+        print(f"Checkerboard not found in {image_file}")
 
 cv2.destroyAllWindows()
 
