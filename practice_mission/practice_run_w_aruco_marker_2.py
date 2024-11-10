@@ -106,12 +106,10 @@ class DroneController:
             await asyncio.sleep(0.1)
 
     async def set_camera_tilt_down(self):
-        # Ascend to a stable hovering altitude
         print("-- Ascending to a stable altitude for better downward view")
         await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, 0.0))  # Hover at -5 meters
         await asyncio.sleep(2)  # Allow time to stabilize
 
-        # After reaching the desired altitude, adjust the yaw to simulate a downward tilt
         print("-- Tilting camera downward by adjusting yaw")
         for angle in range(0, -90, -10):  # Adjusting yaw gradually
             await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -5.0, angle))
@@ -119,8 +117,6 @@ class DroneController:
             await asyncio.sleep(0.5)  # Pause briefly for each yaw adjustment
 
         print("-- Tilt adjustment complete, ready to proceed.")
-
-
 
     async def search_and_land(self):
         """Continuously search for the ArUco marker and land when detected."""
@@ -130,27 +126,23 @@ class DroneController:
                 continue
 
             frame = self.video.frame()
-            if frame is not None and self.detect_aruco_marker(frame):
+            if frame is not None:
+                # Debug print: Detect any object and print "1"
+                if self.detect_any_object(frame):
+                    print("1")
+
+            if self.detect_aruco_marker(frame):
                 print("-- Landing pad detected, initiating landing.")
                 await self.drone.action.land()
                 break
 
             await asyncio.sleep(0.1)
 
-    async def move_toward_marker(self, frame):
-        # Calculate distance and movement towards the marker
-        rvec, tvec = self.get_marker_position(frame)
-
-        if tvec is not None:
-            while tvec[0][0][2] > 0.2:  # Continue until close to marker
-                await self.drone.offboard.set_position_ned(
-                    PositionNedYaw(tvec[0][0][0], tvec[0][0][1], -3.0, 0.0)
-                )
-                print(f"-- Approaching marker at x={tvec[0][0][0]}, y={tvec[0][0][1]}, z={tvec[0][0][2]}")
-                await asyncio.sleep(0.5)
-
-            print("-- Marker detected, initiating landing.")
-            await self.drone.action.land()
+    def detect_any_object(self, frame):
+        """Basic detection of any object based on simple non-zero pixel check."""
+        if np.any(frame):  # Check if there are any non-zero pixels
+            return True
+        return False
 
     def detect_aruco_marker(self, frame):
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
@@ -165,20 +157,6 @@ class DroneController:
                 aruco.drawDetectedMarkers(frame, corners)
                 return True
         return False
-
-    def get_marker_position(self, frame):
-        aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
-        parameters = aruco.DetectorParameters()
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        detector = aruco.ArucoDetector(aruco_dict, parameters)
-        corners, ids, _ = detector.detectMarkers(gray)
-
-        if ids is not None and id_to_find in ids:
-            index = np.where(ids == id_to_find)[0][0]
-            rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[index], marker_size, camera_matrix, camera_distortion)
-            return rvec, tvec
-        return None, None
-
 
 async def main():
     controller = DroneController()
