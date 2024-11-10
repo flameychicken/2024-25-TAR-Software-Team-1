@@ -1,18 +1,15 @@
 import asyncio
 from mavsdk import System
-from mavsdk.offboard import PositionNedYaw, OffboardError, VelocityBodyYawspeed
-import pygame
+from mavsdk.offboard import PositionNedYaw, OffboardError
 import cv2
 import cv2.aruco as aruco
 import numpy as np
-import sys, time, math
 from gi.repository import Gst
 
-# Define Aruco ID and marker size for detection
+# Define Aruco ID and marker size
 id_to_find = 72
-marker_size = 10  # in cm
+marker_size = 10  # cm
 
-# Video class for capturing video stream
 class Video:
     def __init__(self, port=5600):
         Gst.init(None)
@@ -37,11 +34,7 @@ class Video:
         buf = sample.get_buffer()
         caps = sample.get_caps()
         array = np.ndarray(
-            (
-                caps.get_structure(0).get_value('height'),
-                caps.get_structure(0).get_value('width'),
-                3
-            ),
+            (caps.get_structure(0).get_value('height'), caps.get_structure(0).get_value('width'), 3),
             buffer=buf.extract_dup(0, buf.get_size()), dtype=np.uint8)
         return array
 
@@ -61,18 +54,16 @@ class Video:
 
     def callback(self, sink):
         sample = sink.emit('pull-sample')
-        new_frame = self.gst_to_opencv(sample)
-        self._frame = new_frame
+        self._frame = self.gst_to_opencv(sample)
         return Gst.FlowReturn.OK
 
 class DroneController:
     def __init__(self):
         self.drone = System()
-        self.video = Video()  # Initialize video stream
+        self.video = Video()
 
-    async def practice_run(self, port='udp://:14540'):
+    async def setup(self, port='udp://:14540'):
         await self.drone.connect(system_address=port)
-
         print("Waiting for connection...")
         async for state in self.drone.core.connection_state():
             if state.is_connected:
@@ -86,77 +77,66 @@ class DroneController:
                 break
 
         await asyncio.sleep(1)
-
         print("-- Arming")
         await self.drone.action.arm()
-        await asyncio.sleep(0.5)
 
-        # **Set initial position setpoint**
-        try:
-            initial_setpoint = PositionNedYaw(0.0, 0.0, -1.0, 0.0)
-            await self.drone.offboard.set_position_ned(initial_setpoint)
-            print("-- Initial setpoint set successfully")
-        except Exception as e:
-            print(f"Error setting initial setpoint: {e}")
-            await self.drone.action.disarm()
-            return
+        print("-- Starting offboard mode")
+        initial_setpoint = PositionNedYaw(0.0, 0.0, -3.0, 0.0)
+        await self.drone.offboard.set_position_ned(initial_setpoint)
+        await self.drone.offboard.start()
 
-        print("-- Starting offboard")
-        try:
-            await self.drone.offboard.start()
-            print("-- Offboard mode started successfully")
-        except OffboardError as error:
-            print(f"Offboard start failed with error code: {error._result.result}")
-            await self.drone.action.disarm()
-            return
-
-        # Start both the flight and detection tasks
-        await asyncio.gather(self.fly_square(2), self.detect_flag())
-
-    async def fly_square(self, n: int):
-        square_path = [
-            PositionNedYaw(5.0, 0.0, -1.0, 0.0),
-            PositionNedYaw(5.0, 5.0, -1.0, 90.0),
-            PositionNedYaw(0.0, 5.0, -1.0, 180.0),
-            PositionNedYaw(0.0, 0.0, -1.0, 270.0)
-        ]
-
-        for i in range(n):
-            print(f"-- Starting square loop {i + 1}")
-            for j, position in enumerate(square_path):
-                print(f"-- Moving to waypoint {j + 1} of loop {i + 1}")
-                await self.drone.offboard.set_position_ned(position)
-                await asyncio.sleep(5)
-
-        print("-- Landing")
-        await self.drone.action.land()
-
-    async def detect_flag(self):
+    async def search_and_land(self):
         while True:
             if not self.video.frame_available():
                 await asyncio.sleep(0.1)
                 continue
 
             frame = self.video.frame()
-            if frame is None:
-                continue
+            if frame is not None and self.detect_aruco_marker(frame):
+                await self.move_toward_marker(frame)
+                print("-- Landing sequence complete.")
+                break
 
-            if self.detect_aruco_marker(frame):
-                print("Flag detected!")
+            await asyncio.sleep(0.1)
 
-            await asyncio.sleep(0.5)
+    async def move_toward_marker(self, frame):
+        # Calculate distance and movement towards the marker
+        rvec, tvec = self.get_marker_position(frame)
+
+        if tvec is not None:
+            while tvec[0][0][2] > 0.2:  # Continue until close to marker
+                await self.drone.offboard.set_position_ned(
+                    PositionNedYaw(tvec[0][0][0], tvec[0][0][1], -3.0, 0.0)
+                )
+                print(f"-- Approaching marker at x={tvec[0][0][0]}, y={tvec[0][0][1]}, z={tvec[0][0][2]}")
+                await asyncio.sleep(0.5)
+
+            print("-- Marker detected, initiating landing.")
+            await self.drone.action.land()
 
     def detect_aruco_marker(self, frame):
-        # Load camera calibration
         calib_path = "./opencv/camera_calibration/"
         camera_matrix = np.loadtxt(calib_path + 'cameraMatrix_webcam.txt', delimiter=',')
         camera_distortion = np.loadtxt(calib_path + 'cameraDistortion_webcam.txt', delimiter=',')
 
-        # Define Aruco dictionary
         aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
         parameters = aruco.DetectorParameters()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        detector = aruco.ArucoDetector(aruco_dict, parameters)
+        corners, ids, _ = detector.detectMarkers(gray)
 
-        # Convert to grayscale
+        if ids is not None and id_to_find in ids:
+            aruco.drawDetectedMarkers(frame, corners)
+            return True
+        return False
+
+    def get_marker_position(self, frame):
+        calib_path = "./opencv/camera_calibration/"
+        camera_matrix = np.loadtxt(calib_path + 'cameraMatrix_webcam.txt', delimiter=',')
+        camera_distortion = np.loadtxt(calib_path + 'cameraDistortion_webcam.txt', delimiter=',')
+
+        aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
+        parameters = aruco.DetectorParameters()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         detector = aruco.ArucoDetector(aruco_dict, parameters)
         corners, ids, _ = detector.detectMarkers(gray)
@@ -164,19 +144,13 @@ class DroneController:
         if ids is not None and id_to_find in ids:
             index = np.where(ids == id_to_find)[0][0]
             rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[index], marker_size, camera_matrix, camera_distortion)
+            return rvec, tvec
+        return None, None
 
-            aruco.drawDetectedMarkers(frame, corners)
-            cv2.drawFrameAxes(frame, camera_matrix, camera_distortion, rvec, tvec, 10)
-
-            # Get position in camera frame
-            str_position = f"Marker Position x={tvec[0][0]:.2f} y={tvec[0][1]:.2f} z={tvec[0][2]:.2f}"
-            print(str_position)
-
-            return True
-        return False
-
+async def main():
+    controller = DroneController()
+    await controller.setup()
+    await controller.search_and_land()
 
 if __name__ == "__main__":
-    controller = DroneController()
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(controller.practice_run())
+    asyncio.run(main())
