@@ -2,7 +2,7 @@ import asyncio
 import cv2
 import numpy as np
 from mavsdk import System
-from mavsdk.offboard import OffboardError, PositionNed
+from mavsdk.offboard import OffboardError, VelocityNedYaw
 from mavsdk.camera import Camera
 
 # Marker detection parameters
@@ -28,7 +28,11 @@ async def run():
 
     # Start offboard mode
     print("Starting offboard mode...")
-    await drone.offboard.set_rate_position(2.0)  # Set position control rate in meters per second
+    try:
+        await drone.offboard.set_rate_position(2.0)  # Set position control rate in meters per second
+    except OffboardError as e:
+        print(f"Offboard error: {e}")
+        return
 
     # Arm the drone
     print("Arming the drone...")
@@ -57,7 +61,7 @@ async def run():
             # Compute the position of the marker in the camera's frame
             # You can calculate distance, angle, and use it to adjust the drone position
             # For simplicity, assume we just fly to a fixed position
-            await drone.offboard.set_position_ned(PositionNed(0, 0, -10))  # Fly to a fixed point (adjust based on marker location)
+            await drone.offboard.set_velocity_ned(VelocityNedYaw(0, 0, -2, 0))  # Fly down towards marker
             await asyncio.sleep(5)  # Wait a little at the marker location
 
     # Land the drone
