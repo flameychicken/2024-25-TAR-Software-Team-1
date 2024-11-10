@@ -88,9 +88,18 @@ class DroneController:
         await self.drone.action.arm()
 
         print("-- Starting offboard mode")
-        initial_setpoint = PositionNedYaw(0.0, 0.0, -3.0, 0.0)
+        initial_setpoint = PositionNedYaw(0.0, 0.0, -3.0, 0.0)  # Set initial position
         await self.drone.offboard.set_position_ned(initial_setpoint)
         await self.drone.offboard.start()
+
+        # Tilt camera downward by adjusting pitch
+        await self.set_camera_tilt_down()
+
+    async def set_camera_tilt_down(self):
+        # Set a negative pitch (tilt down)
+        print("-- Tilting camera downward")
+        await self.drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -3.0, -45.0))  # Negative yaw to tilt
+        await asyncio.sleep(2)  # Give it some time to stabilize
 
     async def search_and_land(self):
         while True:
@@ -128,7 +137,7 @@ class DroneController:
         detector = aruco.ArucoDetector(aruco_dict, parameters)
         corners, ids, _ = detector.detectMarkers(gray)
 
-        if ids is not None and id_to_find in ids:
+        if ids is not None:
             print(f"Detected IDs: {ids}")  # Print the detected IDs
             if id_to_find in ids:
                 aruco.drawDetectedMarkers(frame, corners)
@@ -147,6 +156,7 @@ class DroneController:
             rvec, tvec, _ = aruco.estimatePoseSingleMarkers(corners[index], marker_size, camera_matrix, camera_distortion)
             return rvec, tvec
         return None, None
+
 
 async def main():
     controller = DroneController()
