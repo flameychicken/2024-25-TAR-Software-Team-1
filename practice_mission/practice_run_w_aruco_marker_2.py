@@ -7,43 +7,37 @@ import cv2.aruco as aruco
 import gi
 import numpy as np
 import sys, time, math
+from datetime import datetime
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
-#--- ARUCO TAG DEFINITION
-id_to_find  = 72
-marker_size  = 10 #- [cm]
+# ARUCO TAG DEFINITION
+id_to_find = 72
+marker_size = 10  # [cm]
 
-
-# GStreamer-based video class for capturing drone video
 class Video():
     def __init__(self, port=5600):
         Gst.init(None)
         self.port = port
         self._frame = None
+        self.frame_count = 0
+        self.last_frame_time = time.time()
+        self.fps = 0
 
-        self.video_source = 'udpsrc port={}'.format(self.port)
+        # Modified pipeline with queue elements for better buffering
+        self.video_source = f'udpsrc port={self.port} ! queue max-size-buffers=3'
         self.video_codec = '! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264'
-        self.video_decode = \
-            '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert'
-        self.video_sink_conf = \
-            '! appsink emit-signals=true sync=false max-buffers=2 drop=true'
+        self.video_decode = '! queue ! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert'
+        self.video_sink_conf = '! appsink emit-signals=true sync=false max-buffers=1 drop=true'
 
         self.video_pipe = None
         self.video_sink = None
-
         self.run()
 
     def start_gst(self, config=None):
         if not config:
-            config = \
-                [
-                    'videotestsrc ! decodebin',
-                    '! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert',
-                    '! appsink'
-                ]
-
+            return
         command = ' '.join(config)
         self.video_pipe = Gst.parse_launch(command)
         self.video_pipe.set_state(Gst.State.PLAYING)
@@ -69,262 +63,175 @@ class Video():
         return self._frame is not None
 
     def run(self):
-        self.start_gst(
-            [
-                self.video_source,
-                self.video_codec,
-                self.video_decode,
-                self.video_sink_conf
-            ])
-
+        self.start_gst([
+            self.video_source,
+            self.video_codec,
+            self.video_decode,
+            self.video_sink_conf
+        ])
         self.video_sink.connect('new-sample', self.callback)
 
     def callback(self, sink):
         sample = sink.emit('pull-sample')
         new_frame = self.gst_to_opencv(sample)
+        
+        # Calculate FPS
+        current_time = time.time()
+        self.frame_count += 1
+        if current_time - self.last_frame_time >= 1.0:
+            self.fps = self.frame_count
+            self.frame_count = 0
+            self.last_frame_time = current_time
+            
         self._frame = new_frame
         return Gst.FlowReturn.OK
 
-
-# Pygame initialization for drone control
-def init_pygame():
-    print("Initializing pygame...")
-    pygame.init()
-    pygame.display.set_mode((400, 400))
-    print("Pygame initialized.")
-
-def get_key(keyName):
-    ans = False
-    for event in pygame.event.get(): pass
-    keyInput = pygame.key.get_pressed()
-    myKey = getattr(pygame, 'K_{}'.format(keyName))
-    if keyInput[myKey]:
-        ans = True
-    pygame.display.update()
-    return ans
-
-#FUNCTIONS RELEVANT TO ARUCO DETECTION BELOW
-
-# Checks if a matrix is a valid rotation matrix.
-def isRotationMatrix(R):
-    Rt = np.transpose(R)
-    shouldBeIdentity = np.dot(Rt, R)
-    I = np.identity(3, dtype=R.dtype)
-    n = np.linalg.norm(I - shouldBeIdentity)
-    return n < 1e-6
-
-def rotationMatrixToEulerAngles(R):
-    assert (isRotationMatrix(R))
-    sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
-    singular = sy < 1e-6
-
-    if not singular:
-        x = math.atan2(R[2, 1], R[2, 2])
-        y = math.atan2(-R[2, 0], sy)
-        z = math.atan2(R[1, 0], R[0, 0])
-    else:
-        x = math.atan2(-R[1, 2], R[1, 1])
-        y = math.atan2(-R[2, 0], sy)
-        z = 0
-    return np.array([x, y, z])
-
-def detect_and_estimate_pose(input_frame):
-    #--- Get the camera calibration path
-    calib_path  = "./opencv/camera_calibration/"
-    camera_matrix   = np.loadtxt(calib_path+'cameraMatrix_webcam.txt', delimiter=',')
-    camera_distortion   = np.loadtxt(calib_path+'cameraDistortion_webcam.txt', delimiter=',')
-
-    #--- 180 deg rotation matrix around the x axis
-    R_flip  = np.zeros((3,3), dtype=np.float32)
-    R_flip[0,0] = 1.0
-    R_flip[1,1] =-1.0
-    R_flip[2,2] =-1.0
-
-    #--- Define the aruco dictionary
-    aruco_dict  = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
-    parameters  = aruco.DetectorParameters()     #version 4.10.0
-
-    #-- Font for the text in the image
-    font = cv2.FONT_HERSHEY_PLAIN
-
-    #-- make copy of input_frame since it is read-only
-    writable_frame = input_frame.copy()
-
-    #-- Convert in gray scale
-    gray    = cv2.cvtColor(writable_frame, cv2.COLOR_BGR2GRAY) #-- remember, OpenCV stores color images in Blue, Green, Red
-
-    #-- Find all the aruco markers in the image
-    detector = aruco.ArucoDetector(aruco_dict, parameters)          #version 4.10.0
-    corners, ids, rejected = detector.detectMarkers(gray)
-
-    marker_detected = False
-
-    if ids is not None and ids[0] == id_to_find:
-        marker_detected = True
+class ArucoDetector:
+    def __init__(self):
+        # Load camera calibration
+        calib_path = "./opencv/camera_calibration/"
+        self.camera_matrix = np.loadtxt(calib_path + 'cameraMatrix_webcam.txt', delimiter=',')
+        self.camera_distortion = np.loadtxt(calib_path + 'cameraDistortion_webcam.txt', delimiter=',')
         
-        #-- ret = [rvec, tvec, ?]
-        #-- array of rotation and position of each marker in camera frame
-        #-- rvec = [[rvec_1], [rvec_2], ...]    attitude of the marker respect to camera frame
-        #-- tvec = [[tvec_1], [tvec_2], ...]    position of the marker in camera frame
-        ret = aruco.estimatePoseSingleMarkers(corners, marker_size, camera_matrix, camera_distortion)
-
-        #-- Unpack the output, get only the first
-        rvec, tvec = ret[0][0,0,:], ret[1][0,0,:]
-
-        #-- Draw the detected marker and put a reference frame over it
-        aruco.drawDetectedMarkers(writable_frame, corners)
-        cv2.drawFrameAxes(writable_frame, camera_matrix, camera_distortion, rvec, tvec, 10)
-
-        #-- Print the tag position in camera frame
-        str_position = "MARKER Position x=%4.0f  y=%4.0f  z=%4.0f"%(tvec[0], tvec[1], tvec[2])
-        cv2.putText(writable_frame, str_position, (0, 100), font, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-        #-- Obtain the rotation matrix tag->camera
-        R_ct    = np.matrix(cv2.Rodrigues(rvec)[0])
-        R_tc    = R_ct.T
-
-        #-- Get the attitude in terms of euler 321 (Needs to be flipped first)
-        roll_marker, pitch_marker, yaw_marker = rotationMatrixToEulerAngles(R_flip*R_tc)
-
-        #-- Print the marker's attitude respect to camera frame
-        str_attitude = "MARKER Attitude r=%4.0f  p=%4.0f  y=%4.0f"%(math.degrees(roll_marker),math.degrees(pitch_marker),
-                            math.degrees(yaw_marker))
-        cv2.putText(writable_frame, str_attitude, (0, 150), font, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-        #-- Now get Position and attitude f the camera respect to the marker
-        pos_camera = -R_tc*np.matrix(tvec).T
-
-        str_position = "CAMERA Position x=%4.0f  y=%4.0f  z=%4.0f"%(pos_camera[0], pos_camera[1], pos_camera[2])
-        cv2.putText(writable_frame, str_position, (0, 200), font, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-        #-- Get the attitude of the camera respect to the frame
-        roll_camera, pitch_camera, yaw_camera = rotationMatrixToEulerAngles(R_flip*R_tc)
-        str_attitude = "CAMERA Attitude r=%4.0f  p=%4.0f  y=%4.0f"%(math.degrees(roll_camera),math.degrees(pitch_camera),
-                            math.degrees(yaw_camera))
-        cv2.putText(writable_frame, str_attitude, (0, 250), font, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-        #--- Display the frame
-        cv2.imshow("Drone Camera Stream with ArUco Detection", writable_frame)
-
-        return True
-
-    else:
-        #--- Display the frame
-        cv2.imshow("Drone Camera Stream with ArUco Detection", writable_frame)
-        return False
-
-async def fly_circle(drone, radius=2, speed=1):
-    """
-    Make the drone fly in a circle pattern
-    radius: radius of the circle in meters
-    speed: speed of movement in meters/second
-    """
-    angle = 0
-    while angle < 2 * math.pi:
-        # Calculate velocities for circular motion
-        vx = speed * math.cos(angle)
-        vy = speed * math.sin(angle)
+        # Initialize ArUco detector
+        self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_ARUCO_ORIGINAL)
+        self.parameters = aruco.DetectorParameters()
+        self.detector = aruco.ArucoDetector(self.aruco_dict, self.parameters)
         
-        velocity = VelocityBodyYawspeed(vx, vy, 0.0, 30.0)  # Constant yaw rate for circular motion
-        await drone.offboard.set_velocity_body(velocity)
-        
-        angle += 0.1  # Increment angle
-        await asyncio.sleep(0.1)
+        # Initialize debug information
+        self.last_detection_time = None
+        self.detection_count = 0
+        self.frames_processed = 0
 
-async def fly_square(drone, side_length=2, speed=1):
-    """
-    Make the drone fly in a square pattern
-    side_length: length of each side in meters
-    speed: speed of movement in meters/second
-    """
-    # Define the square pattern movements
-    movements = [
-        (speed, 0, 0),    # Forward
-        (0, speed, 0),    # Right
-        (-speed, 0, 0),   # Backward
-        (0, -speed, 0)    # Left
-    ]
-    
-    duration = side_length / speed  # Time to complete each side
-    
-    for vx, vy, vz in movements:
-        velocity = VelocityBodyYawspeed(vx, vy, vz, 0.0)
-        start_time = time.time()
+    def detect_marker(self, frame):
+        self.frames_processed += 1
         
-        while time.time() - start_time < duration:
-            await drone.offboard.set_velocity_body(velocity)
-            await asyncio.sleep(0.1)
+        # Make copy of frame
+        frame_copy = frame.copy()
+        gray = cv2.cvtColor(frame_copy, cv2.COLOR_BGR2GRAY)
+        
+        # Detect markers
+        corners, ids, rejected = self.detector.detectMarkers(gray)
+        
+        marker_info = {
+            'detected': False,
+            'position': None,
+            'attitude': None,
+            'frame': frame_copy
+        }
+        
+        if ids is not None and id_to_find in ids:
+            self.detection_count += 1
+            self.last_detection_time = datetime.now()
+            
+            # Get the index of our target marker
+            marker_idx = np.where(ids == id_to_find)[0][0]
+            
+            # Estimate pose
+            ret = aruco.estimatePoseSingleMarkers(
+                [corners[marker_idx]], marker_size, 
+                self.camera_matrix, self.camera_distortion
+            )
+            rvec, tvec = ret[0][0, 0, :], ret[1][0, 0, :]
+            
+            # Draw the marker
+            aruco.drawDetectedMarkers(frame_copy, corners)
+            cv2.drawFrameAxes(frame_copy, self.camera_matrix, 
+                            self.camera_distortion, rvec, tvec, 10)
+            
+            # Calculate position and attitude
+            marker_info['detected'] = True
+            marker_info['position'] = tvec
+            marker_info['attitude'] = self.get_euler_angles(rvec)
+            
+            # Draw debug information
+            self.draw_debug_info(frame_copy, tvec, marker_info['attitude'])
+            
+        marker_info['frame'] = frame_copy
+        return marker_info
+
+    def get_euler_angles(self, rvec):
+        R_ct = np.matrix(cv2.Rodrigues(rvec)[0])
+        R_tc = R_ct.T
+        
+        # Get euler angles
+        roll, pitch, yaw = self.rotation_matrix_to_euler_angles(R_tc)
+        return np.array([roll, pitch, yaw])
+
+    @staticmethod
+    def rotation_matrix_to_euler_angles(R):
+        sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
+        singular = sy < 1e-6
+
+        if not singular:
+            x = math.atan2(R[2, 1], R[2, 2])
+            y = math.atan2(-R[2, 0], sy)
+            z = math.atan2(R[1, 0], R[0, 0])
+        else:
+            x = math.atan2(-R[1, 2], R[1, 1])
+            y = math.atan2(-R[2, 0], sy)
+            z = 0
+
+        return np.array([x, y, z])
+
+    def draw_debug_info(self, frame, position, attitude):
+        font = cv2.FONT_HERSHEY_PLAIN
+        
+        # Draw position
+        pos_text = f"Marker Position: x={position[0]:.1f} y={position[1]:.1f} z={position[2]:.1f}"
+        cv2.putText(frame, pos_text, (10, 30), font, 1, (0, 255, 0), 2)
+        
+        # Draw attitude
+        att_text = f"Marker Attitude: r={math.degrees(attitude[0]):.1f} p={math.degrees(attitude[1]):.1f} y={math.degrees(attitude[2]):.1f}"
+        cv2.putText(frame, att_text, (10, 60), font, 1, (0, 255, 0), 2)
+        
+        # Draw detection stats
+        detection_rate = (self.detection_count / self.frames_processed * 100) if self.frames_processed > 0 else 0
+        stats_text = f"Detection rate: {detection_rate:.1f}% ({self.detection_count}/{self.frames_processed})"
+        cv2.putText(frame, stats_text, (10, 90), font, 1, (0, 255, 0), 2)
 
 async def main():
-    print("Connecting to drone...")
+    # Initialize video and detector
+    video = Video()
+    detector = ArucoDetector()
+    
+    # Initialize drone connection
     drone = System()
     await drone.connect(system_address="udp://:14540")
-
-    print("Waiting for drone to connect...")
+    
+    print("Waiting for drone connection...")
     async for state in drone.core.connection_state():
         if state.is_connected:
-            print("-- Connected to drone!")
+            print("Drone connected!")
             break
-
-    print("-- Arming")
-    await drone.action.arm()
-
-    print("-- Taking off")
-    await drone.action.takeoff()
-
-    # Wait for the drone to reach a stable altitude
-    await asyncio.sleep(5)
-
-    # Initial setpoint before starting offboard mode
-    initial_velocity = VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-    await drone.offboard.set_velocity_body(initial_velocity)
-
-    print("-- Setting offboard mode")
-    await drone.offboard.start()
-
-    # Initialize video
-    video = Video()
     
-    # Flight state
-    marker_detected = False
-    current_pattern = "circle"  # Start with circle pattern
-
+    # Main loop
     while True:
         if video.frame_available():
             frame = video.frame()
             
-            # Detect ArUco markers
-            detected = detect_and_estimate_pose(frame)
+            # Process frame and detect marker
+            marker_info = detector.detect_marker(frame)
             
-            if detected and not marker_detected:
-                # Marker just detected, switch to square pattern
-                print("-- ArUco marker detected! Switching to square pattern")
-                marker_detected = True
-                current_pattern = "square"
+            # Display frame with debug info
+            cv2.putText(marker_info['frame'], f"FPS: {video.fps}", 
+                       (10, 120), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 0), 2)
+            cv2.imshow("Drone Camera Feed", marker_info['frame'])
             
-            if marker_detected:
-                # Execute square pattern
-                await fly_square(drone)
+            # Print detection status
+            if marker_info['detected']:
+                print(f"\rMarker detected! Position: {marker_info['position']}", end='')
             else:
-                # Execute circle pattern
-                await fly_circle(drone)
-
-        # Check for landing command
-        if get_key("l"):
-            print("-- Landing")
-            await drone.action.land()
-            break
-
-        # Exit on 'q' key press
+                print("\rSearching for marker...", end='')
+            
+        # Check for exit
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
-        await asyncio.sleep(0.1)
-
-    # Cleanup
+        
+        await asyncio.sleep(0.01)  # Small sleep to prevent CPU overload
+    
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    init_pygame()
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
