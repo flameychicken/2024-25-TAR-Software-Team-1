@@ -1,0 +1,24 @@
+┣ 📂calibration_images
+┃ ┣ 📜Checkerboard-A1-190mm-3x2.pdf
+┃ ┣ 📜Checkerboard-A1-20mm-41x28.pdf
+┃ ┣ 📜Checkerboard-A1-80mm-8x6.pdf
+┃ ┣ 📜Checkerboard-A2-20mm-28x19.pdf
+┃ ┣ 📜Checkerboard-A3-20mm-19x13.pdf
+┃ ┣ 📜Checkerboard-A3-40mm-8x6.pdf
+┃ ┣ 📜Checkerboard-A3-70mm-4x3.pdf
+┃ ┣ 📜Checkerboard-A4-20mm-13x9.pdf
+┃ ┣ 📜Checkerboard-A4-25mm-8x6.pdf
+┃ ┣ 📜Checkerboard-A4-30mm-8x6.pdf
+┃ ┣ 📜Checkerboard-A4-45mm-5x3.pdf
+┃ ┗ 📜Checkerboard-A4-70mm-3x2.pdf
+┣ 📂practice_mission
+┃ ┣ 📂camera_calibration
+┃ ┣ 📜human_detection.py
+┃ ┣ 📜practice_run_w_aruco_marker.py
+┃ ┣ 📜practice_run.py
+┃ ┣ 📜rotate.py
+┃ ┗ 📜test.py
+┣ 📂ros
+┃ ┗ 📜gps_plotter.py
+┣ 📜calibration_setup.py
+┗ 📜README.md
